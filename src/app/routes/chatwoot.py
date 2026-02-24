@@ -1,22 +1,29 @@
 """
 Chatwoot → Slack webhook handler.
-
-Receives events from Chatwoot and forwards them to the appropriate
-Slack channel, maintaining conversation threading.
 """
 
 import hashlib
 import hmac
 import logging
+from collections import deque
 from typing import Optional
 
 from fastapi import APIRouter, Request, HTTPException
 
 from app.config import settings, InboxMapping
-from app import thread_store, slack_client
+from app import thread_store, slack_client, activity_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Track message IDs we posted via the API so we can ignore the echo-back.
+# Belt-and-suspenders alongside the sender_type check.
+_our_message_ids: deque = deque(maxlen=500)
+
+
+def register_our_message(message_id: int):
+    """Call this after we post a message to Chatwoot so we can ignore its webhook echo."""
+    _our_message_ids.append(message_id)
 
 
 def get_mapping_for_inbox(inbox_id: int) -> Optional[InboxMapping]:
@@ -28,7 +35,7 @@ def get_mapping_for_inbox(inbox_id: int) -> Optional[InboxMapping]:
 
 def verify_signature(body: bytes, signature: str) -> bool:
     if not settings.chatwoot_webhook_secret:
-        return True  # No secret configured, skip verification
+        return True
     expected = hmac.new(
         settings.chatwoot_webhook_secret.encode(),
         body,
@@ -38,7 +45,6 @@ def verify_signature(body: bytes, signature: str) -> bool:
 
 
 def build_new_conversation_blocks(payload: dict, chatwoot_url: str) -> list:
-    """Build rich Slack blocks for a brand-new conversation."""
     conv = payload.get("conversation", {})
     sender = payload.get("sender", {})
     inbox = payload.get("inbox", {})
@@ -47,7 +53,6 @@ def build_new_conversation_blocks(payload: dict, chatwoot_url: str) -> list:
     account_id = account.get("id", settings.chatwoot_account_id)
     conv_id = conv.get("id", "?")
     additional = conv.get("additional_attributes", {})
-
     conv_url = f"{chatwoot_url.rstrip('/')}/app/accounts/{account_id}/conversations/{conv_id}"
     inbox_type = inbox.get("channel_type", "Website").replace("Channel::", "")
 
@@ -115,7 +120,6 @@ def status_emoji_text(status: str, meta: dict) -> str:
 async def chatwoot_webhook(request: Request):
     body = await request.body()
 
-    # Optional signature verification
     sig = request.headers.get("x-hub-signature-256", "")
     if not verify_signature(body, sig):
         raise HTTPException(status_code=401, detail="Invalid signature")
@@ -134,24 +138,41 @@ async def chatwoot_webhook(request: Request):
         await handle_message(payload)
     else:
         logger.debug(f"Ignoring event: {event}")
+        activity_log.add(None, "—", event, "Event ignored (no handler)", status="ignored")
 
     return {"ok": True}
 
 
 async def handle_message(payload: dict):
-    """Handle new/updated messages — route to correct Slack channel/thread."""
     conv = payload.get("conversation", {})
     contact_inbox = conv.get("contact_inbox", {})
     inbox_id = contact_inbox.get("inbox_id") or payload.get("inbox", {}).get("id")
     conversation_id = conv.get("id")
+    message_id = payload.get("id")
+
+    # ── Loop prevention ────────────────────────────────────────────────────────
+    # 1. sender_type == "api" means WE posted this via the API — ignore the echo
+    sender_type = payload.get("sender_type", "").lower()
+    if sender_type == "api":
+        logger.debug(f"Ignoring API-originated message (sender_type=api) for conv {conversation_id}")
+        return
+
+    # 2. Belt-and-suspenders: check our own message ID registry
+    if message_id and message_id in _our_message_ids:
+        logger.debug(f"Ignoring our own message id={message_id} (dedup registry)")
+        return
+    # ──────────────────────────────────────────────────────────────────────────
 
     if not inbox_id or not conversation_id:
         logger.warning("Missing inbox_id or conversation_id in payload")
+        activity_log.add(None, "—", "message_created", "Missing inbox_id or conversation_id", status="error")
         return
 
     mapping = get_mapping_for_inbox(inbox_id)
     if not mapping:
         logger.info(f"No mapping for inbox_id={inbox_id}, skipping")
+        activity_log.add(inbox_id, f"Inbox {inbox_id}", "message_created",
+            f"No mapping configured for inbox {inbox_id}", status="ignored")
         return
 
     chatwoot_url = mapping.chatwoot_url or settings.chatwoot_base_url
@@ -160,23 +181,31 @@ async def handle_message(payload: dict):
     sender = payload.get("sender", {})
     message_type = payload.get("message_type", "incoming")
     content = payload.get("content", "(No content)")
+    sender_name = sender.get("name", "Unknown")
+
+    logger.debug(f"handle_message: conv={conversation_id} type={message_type} sender_type={sender_type} sender={sender_name}")
 
     if message_type == "incoming":
-        username = f"{sender.get('name', 'Contact')} (Contact)"
+        username = f"{sender_name} (Contact)"
         icon_emoji = ":bust_in_silhouette:"
     else:
-        username = f"{sender.get('name', 'Agent')} (Agent)"
+        username = f"{sender_name} (Agent)"
         icon_emoji = ":headphones:"
 
     if thread_data:
-        logger.info(f"Posting threaded reply for conv {conversation_id}")
-        await slack_client.post_message(
+        result = await slack_client.post_message(
             channel_id=thread_data["channel_id"],
             text=content,
             thread_ts=thread_data["ts"],
             username=username,
             icon_emoji=icon_emoji,
         )
+        if result:
+            activity_log.add(inbox_id, mapping.inbox_name, "message_created",
+                f"[CID-{conversation_id}] {username}: {content[:80]}", status="ok")
+        else:
+            activity_log.add(inbox_id, mapping.inbox_name, "message_created",
+                f"[CID-{conversation_id}] Failed to post to Slack", status="error")
     else:
         logger.info(f"Creating new Slack thread for conv {conversation_id} in {mapping.slack_channel}")
         blocks = build_new_conversation_blocks(payload, chatwoot_url)
@@ -188,11 +217,15 @@ async def handle_message(payload: dict):
         if result and result.get("message", {}).get("ts"):
             ts = result["message"]["ts"]
             thread_store.set_thread(conversation_id, ts, mapping.slack_channel_id)
-            logger.info(f"Stored thread ts={ts} for conv {conversation_id}")
+            activity_log.add(inbox_id, mapping.inbox_name, "message_created",
+                f"[CID-{conversation_id}] New thread created → {mapping.slack_channel} | {sender_name}: {content[:60]}",
+                status="ok")
+        else:
+            activity_log.add(inbox_id, mapping.inbox_name, "message_created",
+                f"[CID-{conversation_id}] Failed to create Slack thread", status="error")
 
 
 async def handle_status_change(payload: dict):
-    """Post a status update into the existing Slack thread."""
     conv = payload.get("conversation", {})
     conversation_id = conv.get("id") or payload.get("id")
 
@@ -209,10 +242,20 @@ async def handle_status_change(payload: dict):
     meta = payload.get("meta", {}) or conv.get("meta", {})
     text = status_emoji_text(status, meta)
 
-    await slack_client.post_message(
+    inbox_id = conv.get("contact_inbox", {}).get("inbox_id")
+    mapping = get_mapping_for_inbox(inbox_id) if inbox_id else None
+    inbox_name = mapping.inbox_name if mapping else f"Inbox {inbox_id}"
+
+    result = await slack_client.post_message(
         channel_id=thread_data["channel_id"],
         text=text,
         thread_ts=thread_data["ts"],
         username="Chatwoot",
         icon_emoji=":white_check_mark:",
     )
+    if result:
+        activity_log.add(inbox_id, inbox_name, "status_changed",
+            f"[CID-{conversation_id}] {text}", status="ok")
+    else:
+        activity_log.add(inbox_id, inbox_name, "status_changed",
+            f"[CID-{conversation_id}] Failed to post status to Slack", status="error")

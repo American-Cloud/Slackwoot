@@ -2,82 +2,82 @@
 
 **A lightweight, open-source bridge between [Chatwoot](https://www.chatwoot.com/) and [Slack](https://slack.com/).**
 
-SlackWoot routes Chatwoot conversations to specific Slack channels based on inbox — and lets your team reply directly from Slack threads back into Chatwoot conversations. No more every inbox dumping into one Slack channel.
-
-![SlackWoot Dashboard](docs/screenshot-placeholder.png)
+SlackWoot routes Chatwoot conversations to specific Slack channels based on inbox — and lets your team reply directly from Slack threads back into Chatwoot. No more every inbox dumping into one Slack channel.
 
 ---
 
 ## ✨ Features
 
 - 📥 **Per-inbox routing** — map each Chatwoot inbox to its own Slack channel
-- 🧵 **Full threading** — each conversation gets its own Slack thread; all messages stay organized
-- ↩️ **Two-way replies** — reply in a Slack thread → message appears in Chatwoot conversation
-- 🔄 **Status updates** — resolved/reopened/pending status changes posted to the Slack thread
-- 🛡️ **Loop prevention** — bot messages are ignored; only real human Slack users trigger Chatwoot replies
-- 🌐 **Simple web UI** — dashboard showing mappings and active threads
-- ⚙️ **Config-first** — configure via `config.yaml` or environment variables
-- 🐳 **Docker ready** — one-command deploy with Docker Compose
-- 💾 **Persistent thread store** — JSON file keeps thread mappings across restarts
+- 🧵 **Full threading** — each conversation gets its own Slack thread
+- ↩️ **Two-way replies** — reply in a Slack thread → message appears in Chatwoot
+- 🔄 **Status updates** — resolved/reopened/pending posted to Slack thread
+- 🛡️ **Loop prevention** — bot messages ignored; only real human Slack replies forwarded
+- 📡 **Live activity log** — dashboard shows real-time webhook events per inbox
+- 🗂 **Inbox browser** — see all your Chatwoot inboxes and IDs from the UI
+- 🔒 **Basic auth** — protect the `/admin` UI with a username/password
+- 🌐 **IP whitelist** — restrict `/webhook/*` to specific IPs (e.g. your Chatwoot server)
+- 📖 **Read-only API docs** — Swagger UI with "Try It Out" disabled; ReDoc also available
+- ⚙️ **Config-first** — `config.yaml` or environment variables
+- 🐳 **Docker ready** — one-command deploy
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Project Structure
 
 ```
-Chatwoot ──webhook──► SlackWoot ──Slack API──► Slack Channel
-                          │                        │
-                          │◄──Slack Events API──────┘
-                          │
-                          └──Chatwoot API──► Chatwoot Conversation
+slackwoot/
+├── src/
+│   └── app/
+│       ├── __init__.py
+│       ├── main.py              # FastAPI app, middleware registration, docs
+│       ├── config.py            # Settings & config loading
+│       ├── middleware.py        # IP whitelist + Basic auth middleware
+│       ├── thread_store.py      # Conversation → Slack thread persistence
+│       ├── activity_log.py      # In-memory activity log for UI
+│       ├── slack_client.py      # Slack API wrapper
+│       ├── chatwoot_client.py   # Chatwoot API wrapper
+│       ├── routes/
+│       │   ├── chatwoot.py      # Chatwoot webhook handler
+│       │   ├── slack.py         # Slack Events API handler
+│       │   └── admin.py         # Admin UI + API routes
+│       ├── templates/           # Jinja2 HTML templates
+│       │   ├── base.html
+│       │   ├── index.html
+│       │   └── admin.html
+│       └── static/              # CSS/JS assets
+├── data/
+│   └── threads.json             # Thread mapping store (auto-created)
+├── config.example.yaml
+├── config.yaml                  # Your config (gitignored)
+├── pyproject.toml
+├── Makefile
+├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
+└── run.py
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Clone & configure
-
 ```bash
-git clone https://github.com/CodeBleu/slackwoot.git
+# 1. Clone
+git clone https://github.com/your-org/slackwoot.git
 cd slackwoot
+
+# 2. Create virtualenv
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 3. Copy and edit config
 cp config.example.yaml config.yaml
-```
+nano config.yaml
 
-Edit `config.yaml` with your credentials and inbox mappings:
-
-```yaml
-chatwoot_base_url: "https://your-chatwoot.example.com"
-chatwoot_api_token: "your-user-access-token"
-chatwoot_account_id: 1
-
-slack_bot_token: "xoxb-your-bot-token"
-slack_signing_secret: "your-signing-secret"
-
-inbox_mappings:
-  - chatwoot_inbox_id: 4
-    inbox_name: "Website Chat"
-    slack_channel: "#support-website"
-    slack_channel_id: "CAAAAAAAAAA"
-
-  - chatwoot_inbox_id: 1
-    inbox_name: "Email"
-    slack_channel: "#support-email"
-    slack_channel_id: "CBBBBBBBBB"
-```
-
-### 2. Run with Docker Compose
-
-```bash
-docker compose up -d
-```
-
-### 3. Run locally (development)
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python run.py
+# 4. Install and run
+make run       # production (no reload)
+make dev       # same, alias for development
 ```
 
 The app runs at `http://localhost:8000`.
@@ -88,24 +88,25 @@ The app runs at `http://localhost:8000`.
 
 All values can be set in `config.yaml` **or** as environment variables.
 
-| Key / Env Var | Description |
+| config.yaml key / Env Var | Description |
 |---|---|
 | `CHATWOOT_BASE_URL` | Your Chatwoot instance URL |
 | `CHATWOOT_API_TOKEN` | User access token (Settings → Profile → Access Token) |
-| `CHATWOOT_ACCOUNT_ID` | Numeric account ID (visible in the URL when logged in) |
-| `CHATWOOT_WEBHOOK_SECRET` | Optional — HMAC secret for webhook verification |
+| `CHATWOOT_ACCOUNT_ID` | Numeric account ID (visible in URL when logged in) |
+| `CHATWOOT_WEBHOOK_SECRET` | Optional HMAC secret (reserved for future Chatwoot support) |
 | `SLACK_BOT_TOKEN` | Bot token starting with `xoxb-` |
-| `SLACK_SIGNING_SECRET` | From your Slack app's Basic Information page |
+| `SLACK_SIGNING_SECRET` | From Slack App → Basic Information |
+| `ADMIN_USERNAME` | Basic auth username for `/admin` — leave blank to disable |
+| `ADMIN_PASSWORD` | Basic auth password for `/admin` |
+| `WEBHOOK_ALLOWED_IPS` | Comma-separated IPs/CIDRs allowed to call `/webhook/*` |
 | `LOG_LEVEL` | `INFO` (default), `DEBUG`, `WARNING` |
-| `THREAD_STORE_PATH` | Path to the thread mapping JSON file (default: `data/threads.json`) |
+| `THREAD_STORE_PATH` | Path to thread JSON file (default: `data/threads.json`) |
 
 ### Multiple mappings via environment variables
 
-If you prefer not to use `config.yaml`, define mappings with numbered env vars:
-
 ```bash
-SLACKWOOT_MAPPING_1=inbox_id:4,inbox_name:Website,slack_channel:#support-web,slack_channel_id:CAAAAAAAA
-SLACKWOOT_MAPPING_2=inbox_id:1,inbox_name:Email,slack_channel:#support-email,slack_channel_id:CBBBBBBBB
+SLACKWOOT_MAPPING_1=inbox_id:4,inbox_name:Website,slack_channel:#support-web,slack_channel_id:C0AHGAWTHFA
+SLACKWOOT_MAPPING_2=inbox_id:1,inbox_name:Email,slack_channel:#support-email,slack_channel_id:C0AHGGDJHGQ
 ```
 
 ---
@@ -114,21 +115,22 @@ SLACKWOOT_MAPPING_2=inbox_id:1,inbox_name:Email,slack_channel:#support-email,sla
 
 1. Go to **Settings → Integrations → Webhooks → Add new webhook**
 2. URL: `https://your-slackwoot-domain.com/webhook/chatwoot`
-3. Enable these events:
-   - ✅ `message_created`
-   - ✅ `conversation_status_changed`
+3. Enable events: `message_created`, `conversation_status_changed`
 4. Save
+
+> **Tip:** Visit `/admin` and click **Load Inboxes** to see all your inbox IDs without leaving the browser.
+
+> **IP Whitelist:** To restrict the webhook to only your Chatwoot server, add its IP to `webhook_allowed_ips` in `config.yaml`.
 
 ---
 
 ## 💬 Slack App Setup
 
-### Create a Slack App
+### 1. Create a Slack App
 
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
-2. Name it something like `SlackWoot Bot`
+Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
 
-### OAuth & Permissions — add these Bot Token Scopes:
+### 2. OAuth & Permissions — Bot Token Scopes
 
 | Scope | Purpose |
 |---|---|
@@ -138,111 +140,76 @@ SLACKWOOT_MAPPING_2=inbox_id:1,inbox_name:Email,slack_channel:#support-email,sla
 | `groups:history` | Read private channel history |
 | `users:read` | Look up user info (loop prevention) |
 
-### Event Subscriptions
+### 3. Event Subscriptions
 
-1. Enable Events → Request URL: `https://your-slackwoot-domain.com/slack/events`
-2. Subscribe to **Bot Events**:
-   - `message.channels`
-   - `message.groups`
+1. Enable Events
+2. Request URL: `https://your-slackwoot-domain.com/slack/events`
+3. Slack will send a challenge — SlackWoot responds automatically
+4. Subscribe to **Bot Events**: `message.channels`, `message.groups`
 
-### Install the App
+### 4. Install & Configure
 
-1. Go to **OAuth & Permissions** → Install to Workspace
-2. Copy the **Bot User OAuth Token** (`xoxb-...`) into your config
-3. Invite the bot to each channel you mapped: `/invite @SlackWoot`
+1. **OAuth & Permissions** → Install to Workspace → copy the `xoxb-` token
+2. Add token and signing secret to `config.yaml`
+3. Invite the bot to each mapped channel: `/invite @SlackWoot`
+
+---
+
+## 🔒 Security
+
+### Admin Basic Auth
+Set `admin_username` and `admin_password` in `config.yaml`. The browser will prompt for credentials when accessing `/admin`. Leave blank to disable (open access).
+
+### Webhook IP Whitelist
+Restrict `/webhook/chatwoot` to your Chatwoot server's IP:
+```yaml
+webhook_allowed_ips:
+  - "1.2.3.4"        # Your Chatwoot server IP
+  - "10.0.0.0/8"     # Or a CIDR range
+```
+Leave empty to allow all IPs. The signing secret field is also available for future use when Chatwoot adds HMAC support.
+
+### API Docs
+- `/docs` — Swagger UI with **Try It Out disabled**
+- `/redoc` — Read-only ReDoc
 
 ---
 
 ## 🔄 How It Works
 
 ### Chatwoot → Slack
-
-1. A contact sends a message to a Chatwoot inbox
-2. Chatwoot fires a webhook to SlackWoot
-3. SlackWoot looks up which Slack channel is mapped to that inbox
-4. If it's the first message: posts a rich card to Slack and saves the thread `ts`
-5. Subsequent messages (from contact or agent): posted as thread replies
+1. Contact sends a message → Chatwoot fires webhook to SlackWoot
+2. SlackWoot looks up the Slack channel mapped to that inbox
+3. First message: rich card posted to Slack, thread `ts` saved
+4. Subsequent messages: posted as thread replies
 
 ### Slack → Chatwoot
-
-1. A human team member replies in a Slack thread
-2. Slack fires an event to SlackWoot
-3. SlackWoot checks: is this a bot? If yes, ignore (prevents loops)
-4. Looks up which Chatwoot conversation matches this thread
-5. Posts the reply as an outgoing agent message in Chatwoot
+1. Team member replies in a Slack thread
+2. SlackWoot verifies it's a real human (not a bot — loop prevention)
+3. Looks up the Chatwoot conversation for that thread
+4. Posts reply as an outgoing agent message in Chatwoot
 
 ### Status Changes
-
-When a conversation is resolved/reopened/set in Chatwoot, a status update is posted to the existing Slack thread.
-
----
-
-## 🔒 Loop Prevention
-
-SlackWoot uses two layers of protection to prevent infinite reply loops:
-
-1. **Bot ID check** — Slack events with a `bot_id` field are ignored immediately
-2. **User info check** — the Slack Users API is called to verify the sender is a real human (`is_bot: false`)
-
-Only messages typed by real team members in Slack threads will be forwarded to Chatwoot.
-
----
-
-## 🌐 Web UI
-
-Open `http://your-slackwoot-domain.com` in a browser to see:
-
-- **Home** — webhook URLs you need to configure, active mappings
-- **Admin** (`/admin`) — live view of tracked threads, with ability to remove stale mappings
-
----
-
-## 📁 Project Structure
-
-```
-slackwoot/
-├── app/
-│   ├── main.py              # FastAPI app & routing
-│   ├── config.py            # Settings & config loading
-│   ├── thread_store.py      # Conversation → Slack thread persistence
-│   ├── slack_client.py      # Slack API wrapper
-│   ├── chatwoot_client.py   # Chatwoot API wrapper
-│   ├── routes/
-│   │   ├── chatwoot.py      # Chatwoot webhook handler
-│   │   ├── slack.py         # Slack Events API handler
-│   │   └── admin.py         # Admin UI API routes
-│   ├── templates/           # Jinja2 HTML templates
-│   └── static/              # CSS/JS assets
-├── data/
-│   └── threads.json         # Thread mapping store (auto-created)
-├── config.example.yaml
-├── config.yaml              # Your config (gitignored)
-├── docker-compose.yml
-├── Dockerfile
-├── requirements.txt
-└── run.py
-```
+Resolved/reopened/pending status changes in Chatwoot are posted to the existing Slack thread automatically.
 
 ---
 
 ## 🗺️ Roadmap
 
 - [ ] Web UI form to add/edit inbox mappings without editing config
-- [ ] SQLite/Redis option for thread store
+- [ ] SQLite/Redis option for persistent activity log
 - [ ] Slack message formatting (preserve markdown)
 - [ ] Attachment forwarding (images, files)
-- [ ] Multiple Chatwoot account support
-- [ ] Webhook signature verification UI toggle
-- [ ] Authentication for the admin dashboard
+- [ ] SSO / multi-user admin authentication
 
 ---
 
 ## 🤝 Contributing
 
-Pull requests welcome! Please open an issue first to discuss what you'd like to change.
+PRs welcome! Please open an issue first to discuss changes.
 
 ---
 
 ## 📄 License
 
-MIT — use it, fork it, ship it.
+MIT

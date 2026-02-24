@@ -2,19 +2,29 @@
 # Copy this to config.yaml and fill in your values.
 # All values can also be set via environment variables.
 
-# ── Chatwoot ─────────────────────────────────────────────────────────────────
+# ── Chatwoot ──────────────────────────────────────────────────────────────────
 chatwoot_base_url: "https://your-chatwoot.example.com"
 chatwoot_api_token: "your-chatwoot-user-access-token"
 chatwoot_account_id: 1
-chatwoot_webhook_secret: ""   # Optional: set to validate webhook signatures
+chatwoot_webhook_secret: ""   # Optional: HMAC secret if Chatwoot ever supports it
 
 # ── Slack ─────────────────────────────────────────────────────────────────────
 slack_bot_token: "xoxb-your-slack-bot-token"
 slack_signing_secret: "your-slack-signing-secret"
 
-# ── Inbox → Slack Channel Mappings ────────────────────────────────────────────
+# ── Security ──────────────────────────────────────────────────────────────────
+# Basic auth for /admin UI — leave blank to disable
+admin_username: ""
+admin_password: ""
+
+# IP whitelist for /webhook/* endpoints (Chatwoot server IPs)
+# Leave empty to allow all. Supports individual IPs and CIDR ranges.
+# Example: ["1.2.3.4", "10.0.0.0/8"]
+webhook_allowed_ips: []
+
+# ── Inbox → Slack Channel Mappings ───────────────────────────────────────────
 # Add one entry per Chatwoot inbox you want to bridge.
-# slack_channel_id: Find this by right-clicking a channel in Slack → View channel details → scroll to bottom
+# Tip: visit /admin and click "Load Inboxes" to see your inbox IDs.
 inbox_mappings:
   - chatwoot_inbox_id: 4
     inbox_name: "Website Chat"

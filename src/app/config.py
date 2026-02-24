@@ -9,7 +9,6 @@ ENV format (supports multiple):
 """
 
 import os
-import json
 import yaml
 from typing import List, Optional
 from pydantic import BaseModel
@@ -19,23 +18,28 @@ from pathlib import Path
 class InboxMapping(BaseModel):
     chatwoot_inbox_id: int
     inbox_name: str
-    slack_channel: str          # e.g. "#support-web"
-    slack_channel_id: str       # e.g. "CAAAAAAAAAA"  (needed for Slack API)
-    chatwoot_url: Optional[str] = None  # override per-mapping if needed
+    slack_channel: str
+    slack_channel_id: str
+    chatwoot_url: Optional[str] = None
 
 
 class Settings(BaseModel):
     # Chatwoot
     chatwoot_base_url: str = "https://your-chatwoot-instance.com"
-    chatwoot_api_token: str = ""          # User access token with agent permissions
+    chatwoot_api_token: str = ""
     chatwoot_account_id: int = 1
-    chatwoot_webhook_secret: str = ""     # Optional HMAC secret for webhook verification
+    chatwoot_webhook_secret: str = ""
 
     # Slack
-    slack_bot_token: str = ""             # xoxb-... Bot token
-    slack_signing_secret: str = ""        # For verifying Slack events/interactivity
+    slack_bot_token: str = ""
+    slack_signing_secret: str = ""
 
-    # Inbox → Channel mappings
+    # Security
+    admin_username: str = ""          # Basic auth for /admin — leave blank to disable
+    admin_password: str = ""
+    webhook_allowed_ips: List[str] = []  # CIDR or IP list for /webhook/* — empty = allow all
+
+    # Inbox mappings
     inbox_mappings: List[InboxMapping] = []
 
     # App
@@ -46,13 +50,13 @@ class Settings(BaseModel):
 def load_settings() -> Settings:
     data: dict = {}
 
-    # Load from config.yaml if present
-    config_path = Path("config.yaml")
-    if config_path.exists():
-        with open(config_path) as f:
-            data = yaml.safe_load(f) or {}
+    # Load from config.yaml if present (look relative to project root)
+    for config_path in [Path("config.yaml"), Path(__file__).parent.parent.parent / "config.yaml"]:
+        if config_path.exists():
+            with open(config_path) as f:
+                data = yaml.safe_load(f) or {}
+            break
 
-    # Override with environment variables
     env_map = {
         "CHATWOOT_BASE_URL": "chatwoot_base_url",
         "CHATWOOT_API_TOKEN": "chatwoot_api_token",
@@ -60,6 +64,8 @@ def load_settings() -> Settings:
         "CHATWOOT_WEBHOOK_SECRET": "chatwoot_webhook_secret",
         "SLACK_BOT_TOKEN": "slack_bot_token",
         "SLACK_SIGNING_SECRET": "slack_signing_secret",
+        "ADMIN_USERNAME": "admin_username",
+        "ADMIN_PASSWORD": "admin_password",
         "LOG_LEVEL": "log_level",
         "THREAD_STORE_PATH": "thread_store_path",
     }
@@ -68,6 +74,11 @@ def load_settings() -> Settings:
         if val:
             data[field] = val
 
+    # Webhook IP whitelist from env (comma-separated)
+    raw_ips = os.environ.get("WEBHOOK_ALLOWED_IPS")
+    if raw_ips:
+        data["webhook_allowed_ips"] = [ip.strip() for ip in raw_ips.split(",")]
+
     # Parse SLACKWOOT_MAPPING_N env vars
     mappings = data.get("inbox_mappings", [])
     i = 1
@@ -75,7 +86,6 @@ def load_settings() -> Settings:
         raw = os.environ.get(f"SLACKWOOT_MAPPING_{i}")
         if not raw:
             break
-        # Format: key:value,key:value
         m = {}
         for pair in raw.split(","):
             k, _, v = pair.partition(":")
