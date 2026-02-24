@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Track message IDs we posted via the API so we can ignore the echo-back.
-# Belt-and-suspenders alongside the sender_type check.
 _our_message_ids: deque = deque(maxlen=500)
 
 
@@ -44,17 +43,45 @@ def verify_signature(body: bytes, signature: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def format_attachments_text(attachments: list) -> str:
+    """Build a human-readable string describing attachments."""
+    if not attachments:
+        return ""
+    parts = []
+    for att in attachments:
+        name = att.get("file_name", "attachment")
+        file_type = att.get("file_type", "")
+        size = att.get("file_size", 0)
+        size_str = f"{round(size/1024, 1)} KB" if size else ""
+        label = f"📎 {name}"
+        if file_type:
+            label += f" [{file_type}]"
+        if size_str:
+            label += f" ({size_str})"
+        parts.append(label)
+    return "\n".join(parts)
+
+
 def build_new_conversation_blocks(payload: dict, chatwoot_url: str) -> list:
     conv = payload.get("conversation", {})
     sender = payload.get("sender", {})
     inbox = payload.get("inbox", {})
     account = payload.get("account", {})
-    content = payload.get("content", "(No content)")
+    content = payload.get("content") or ""
+    attachments = payload.get("attachments", []) or []
     account_id = account.get("id", settings.chatwoot_account_id)
     conv_id = conv.get("id", "?")
     additional = conv.get("additional_attributes", {})
     conv_url = f"{chatwoot_url.rstrip('/')}/app/accounts/{account_id}/conversations/{conv_id}"
     inbox_type = inbox.get("channel_type", "Website").replace("Channel::", "")
+
+    # Build message body — text + attachment lines
+    body_parts = []
+    if content:
+        body_parts.append(content)
+    if attachments:
+        body_parts.append(format_attachments_text(attachments))
+    body_text = "\n".join(body_parts) or "(No content)"
 
     return [
         {
@@ -81,7 +108,7 @@ def build_new_conversation_blocks(payload: dict, chatwoot_url: str) -> list:
         },
         {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"*Message:*\n{content}"},
+            "text": {"type": "mrkdwn", "text": f"*Message:*\n{body_text}"},
         },
         {
             "type": "context",
@@ -150,18 +177,16 @@ async def handle_message(payload: dict):
     conversation_id = conv.get("id")
     message_id = payload.get("id")
 
-    # ── Loop prevention ────────────────────────────────────────────────────────
-    # 1. sender_type == "api" means WE posted this via the API — ignore the echo
+    # ── Loop prevention ───────────────────────────────────────────────────────
     sender_type = payload.get("sender_type", "").lower()
     if sender_type == "api":
         logger.debug(f"Ignoring API-originated message (sender_type=api) for conv {conversation_id}")
         return
 
-    # 2. Belt-and-suspenders: check our own message ID registry
     if message_id and message_id in _our_message_ids:
         logger.debug(f"Ignoring our own message id={message_id} (dedup registry)")
         return
-    # ──────────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────────────────
 
     if not inbox_id or not conversation_id:
         logger.warning("Missing inbox_id or conversation_id in payload")
@@ -180,10 +205,12 @@ async def handle_message(payload: dict):
 
     sender = payload.get("sender", {})
     message_type = payload.get("message_type", "incoming")
-    content = payload.get("content", "(No content)")
+    content = payload.get("content") or ""
+    attachments = payload.get("attachments", []) or []
     sender_name = sender.get("name", "Unknown")
 
-    logger.debug(f"handle_message: conv={conversation_id} type={message_type} sender_type={sender_type} sender={sender_name}")
+    logger.debug(f"handle_message: conv={conversation_id} type={message_type} sender_type={sender_type} "
+                 f"sender={sender_name} attachments={len(attachments)}")
 
     if message_type == "incoming":
         username = f"{sender_name} (Contact)"
@@ -192,17 +219,23 @@ async def handle_message(payload: dict):
         username = f"{sender_name} (Agent)"
         icon_emoji = ":headphones:"
 
+    # Build the text — combine content and attachment descriptions
+    att_text = format_attachments_text(attachments)
+    text_parts = [p for p in [content, att_text] if p]
+    full_text = "\n".join(text_parts) or "(attachment)"
+
+    activity_detail = f"[CID-{conversation_id}] {username}: {full_text[:80]}"
+
     if thread_data:
         result = await slack_client.post_message(
             channel_id=thread_data["channel_id"],
-            text=content,
+            text=full_text,
             thread_ts=thread_data["ts"],
             username=username,
             icon_emoji=icon_emoji,
         )
         if result:
-            activity_log.add(inbox_id, mapping.inbox_name, "message_created",
-                f"[CID-{conversation_id}] {username}: {content[:80]}", status="ok")
+            activity_log.add(inbox_id, mapping.inbox_name, "message_created", activity_detail, status="ok")
         else:
             activity_log.add(inbox_id, mapping.inbox_name, "message_created",
                 f"[CID-{conversation_id}] Failed to post to Slack", status="error")
@@ -211,14 +244,14 @@ async def handle_message(payload: dict):
         blocks = build_new_conversation_blocks(payload, chatwoot_url)
         result = await slack_client.post_message(
             channel_id=mapping.slack_channel_id,
-            text=f"{username}: {content}",
+            text=f"{username}: {full_text}",
             blocks=blocks,
         )
         if result and result.get("message", {}).get("ts"):
             ts = result["message"]["ts"]
             thread_store.set_thread(conversation_id, ts, mapping.slack_channel_id)
             activity_log.add(inbox_id, mapping.inbox_name, "message_created",
-                f"[CID-{conversation_id}] New thread created → {mapping.slack_channel} | {sender_name}: {content[:60]}",
+                f"[CID-{conversation_id}] New thread created → {mapping.slack_channel} | {sender_name}: {full_text[:60]}",
                 status="ok")
         else:
             activity_log.add(inbox_id, mapping.inbox_name, "message_created",
