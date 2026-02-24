@@ -1,0 +1,40 @@
+# --- Python bytecode / caches ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+.env/
+pip-wheel-metadata/
+
+# --- Packaging / build artifacts ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Logs and runtime files ---
+*.log
+*.tmp
+*.pid
+
+# --- Local data (keep example config, ignore real config & data) ---
+config.yaml
+src/data/
+!src/data/.gitkeep
+
+# --- IDE / editor files ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.sublime-*
+*.DS_Store
+Thumbs.db
+
+# --- Docker / compose extras (if any) ---
+*.local.yml

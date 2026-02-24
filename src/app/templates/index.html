@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}SlackWoot — Home{% endblock %}
+{% block content %}
+
+<h1>⚡ SlackWoot</h1>
+<p class="subtitle">Chatwoot ↔ Slack bridge · v{{ version }}</p>
+
+<div class="grid2">
+  <div class="card">
+    <h2>🔗 Chatwoot Webhook URL</h2>
+    <div class="url-box">{{ request.base_url }}webhook/chatwoot</div>
+    <p style="color:var(--muted);font-size:0.8rem;margin-top:0.75rem;">
+      Add this URL in Chatwoot → Settings → Integrations → Webhooks.<br>
+      Events to enable: <strong>message_created</strong>, <strong>conversation_status_changed</strong>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>💬 Slack Events URL</h2>
+    <div class="url-box">{{ request.base_url }}slack/events</div>
+    <p style="color:var(--muted);font-size:0.8rem;margin-top:0.75rem;">
+      Add this URL in your Slack App → Event Subscriptions.<br>
+      Subscribe to <strong>message.channels</strong> and <strong>message.groups</strong> bot events.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📋 Active Inbox Mappings</h2>
+  {% if mappings %}
+  <table>
+    <thead>
+      <tr>
+        <th>Inbox ID</th>
+        <th>Inbox Name</th>
+        <th>Slack Channel</th>
+        <th>Channel ID</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in mappings %}
+      <tr>
+        <td><code>{{ m.chatwoot_inbox_id }}</code></td>
+        <td>{{ m.inbox_name }}</td>
+        <td><span class="badge badge-purple">#{{ m.slack_channel.lstrip('#') }}</span></td>
+        <td><code>{{ m.slack_channel_id }}</code></td>
+        <td><span class="pill"><span class="dot"></span> Active</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--muted);">No mappings configured. See the README to add inbox mappings via <code>config.yaml</code> or environment variables.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>🚀 Quick Setup</h2>
+  <p style="font-size:0.88rem;line-height:1.7;color:var(--muted);">
+    1. Configure your mappings in <code>config.yaml</code> or via environment variables (<code>SLACKWOOT_MAPPING_1</code>, etc.)<br>
+    2. Set your <code>SLACK_BOT_TOKEN</code>, <code>SLACK_SIGNING_SECRET</code>, <code>CHATWOOT_API_TOKEN</code>.<br>
+    3. Point your Chatwoot webhook to the URL above.<br>
+    4. Point your Slack App Events URL to the Slack events URL above.<br>
+    5. Replies in Slack threads automatically flow back to Chatwoot conversations. 🎉
+  </p>
+</div>
+
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}SlackWoot — Admin{% endblock %}
+{% block content %}
+
+<h1>Dashboard</h1>
+<p class="subtitle">Active thread mappings and inbox configuration</p>
+
+<div class="grid2">
+  <div class="card">
+    <h2>📋 Inbox → Channel Mappings</h2>
+    {% if mappings %}
+    <table>
+      <thead><tr><th>Inbox ID</th><th>Name</th><th>Slack Channel</th></tr></thead>
+      <tbody>
+        {% for m in mappings %}
+        <tr>
+          <td><code>{{ m.chatwoot_inbox_id }}</code></td>
+          <td>{{ m.inbox_name }}</td>
+          <td><span class="badge badge-purple">#{{ m.slack_channel.lstrip('#') }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);">No mappings configured.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>📊 Stats</h2>
+    <table>
+      <tbody>
+        <tr><td>Active Mappings</td><td><span class="badge badge-green">{{ mappings|length }}</span></td></tr>
+        <tr><td>Tracked Conversations</td><td><span class="badge badge-blue">{{ threads|length }}</span></td></tr>
+        <tr><td>Chatwoot URL</td><td style="font-size:0.78rem;word-break:break-all;color:var(--muted)">{{ chatwoot_url }}</td></tr>
+        <tr><td>Account ID</td><td><code>{{ account_id }}</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🧵 Active Thread Mappings</h2>
+  <p style="color:var(--muted);font-size:0.82rem;margin-bottom:1rem;">
+    These are the Chatwoot conversations currently tracked with a Slack thread.
+    Deleting a mapping will cause the next message to create a new Slack thread.
+  </p>
+  {% if threads %}
+  <table>
+    <thead>
+      <tr>
+        <th>Conversation ID</th>
+        <th>Slack Thread TS</th>
+        <th>Slack Channel</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for conv_id, data in threads.items() %}
+      <tr id="row-{{ conv_id }}">
+        <td>
+          <a href="{{ chatwoot_url }}/app/accounts/{{ account_id }}/conversations/{{ conv_id }}"
+             target="_blank"
+             style="color:var(--accent2);text-decoration:none;">
+            #{{ conv_id }}
+          </a>
+        </td>
+        <td><code style="font-size:0.78rem;">{{ data.ts }}</code></td>
+        <td><code>{{ data.channel_id }}</code></td>
+        <td>
+          <button class="btn btn-red" onclick="deleteThread({{ conv_id }})">🗑 Remove</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--muted);">No threads tracked yet. Conversations will appear here once messages are received.</p>
+  {% endif %}
+</div>
+
+<script>
+async function deleteThread(convId) {
+  if (!confirm(`Remove thread mapping for conversation #${convId}?`)) return;
+  const r = await fetch(`/admin/threads/${convId}`, { method: 'DELETE' });
+  if (r.ok) {
+    document.getElementById(`row-${convId}`)?.remove();
+  } else {
+    alert('Failed to remove mapping.');
+  }
+}
+</script>
+{% endblock %}

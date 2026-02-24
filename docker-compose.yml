@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  slackwoot:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - slackwoot_data:/app/data
+    environment:
+      # Override any config.yaml values here if preferred:
+      # CHATWOOT_BASE_URL: https://your-chatwoot.example.com
+      # CHATWOOT_API_TOKEN: your-token
+      # SLACK_BOT_TOKEN: xoxb-...
+      # SLACK_SIGNING_SECRET: ...
+      LOG_LEVEL: INFO
+    restart: unless-stopped
+
+volumes:
+  slackwoot_data:
