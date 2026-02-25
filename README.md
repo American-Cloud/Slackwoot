@@ -37,8 +37,8 @@ slackwoot/
 │       ├── middleware.py        # IP whitelist + Basic auth middleware
 │       ├── database.py          # SQLAlchemy async engine + session factory
 │       ├── models.py            # ORM models: ThreadMapping, ActivityLogEntry
-│       ├── db_thread_store.py   # DB-backed thread store (replaces threads.json)
-│       ├── db_activity_log.py   # DB-backed activity log (replaces in-memory deque)
+│       ├── db_thread_store.py   # DB-backed thread store
+│       ├── db_activity_log.py   # DB-backed activity log
 │       ├── slack_client.py      # Slack API wrapper
 │       ├── chatwoot_client.py   # Chatwoot API wrapper
 │       ├── routes/
@@ -50,20 +50,15 @@ slackwoot/
 │       │   ├── index.html
 │       │   └── admin.html
 │       └── static/              # CSS/JS assets
-├── alembic/                     # Database migrations
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
-│       └── 001_initial_schema.py
 ├── data/                        # Runtime data (auto-created, gitignored)
 │   └── slackwoot.db             # SQLite database (default)
-├── alembic.ini
 ├── config.example.yaml
 ├── config.yaml                  # Your config (gitignored)
 ├── pyproject.toml
 ├── Makefile
 ├── Dockerfile
 ├── docker-compose.yml
+├── entrypoint.sh
 ├── requirements.txt
 └── run.py
 ```
@@ -85,17 +80,11 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 cp config.example.yaml config.yaml
 nano config.yaml
 
-# 4. Install dependencies
-make install
-
-# 5. Run database migrations
-make db-upgrade
-
-# 6. Start the app
+# 4. Install dependencies and start
 make run
 ```
 
-The app runs at `http://localhost:8000`.
+The app runs at `http://localhost:8000`. The database is created automatically on first startup at `data/slackwoot.db`.
 
 ### Makefile targets
 
@@ -104,10 +93,6 @@ The app runs at `http://localhost:8000`.
 | `make install` | Install Python dependencies via `pip install -e .` |
 | `make run` | Install deps and start the server |
 | `make dev` | Same as `make run` (alias for development) |
-| `make db-upgrade` | Apply all pending Alembic migrations |
-| `make db-downgrade` | Roll back the last migration |
-| `make db-history` | Show migration history |
-| `make migrate msg="description"` | Generate a new migration from model changes |
 
 ---
 
@@ -120,14 +105,11 @@ docker compose up -d
 # View logs
 docker compose logs -f
 
-# Run migrations inside the container
-docker compose exec slackwoot alembic upgrade head
-
 # Rebuild after code changes
 docker compose up -d --build
 ```
 
-The SQLite database is persisted in a named Docker volume (`slackwoot_data`).
+The SQLite database is persisted in a named Docker volume (`slackwoot_data`) and is created automatically on first startup.
 
 ### PostgreSQL (production)
 
@@ -261,21 +243,16 @@ When SlackWoot posts to Chatwoot via API, Chatwoot fires a webhook back. This is
 
 ## 🗄️ Database
 
-SlackWoot uses SQLAlchemy async with Alembic for migrations.
+SlackWoot uses SQLAlchemy async. The database is created automatically on first startup — no manual migration steps required.
 
-**Default (SQLite):** Zero-config, file at `data/slackwoot.db`. Good for single-host deployments.
+**Default (SQLite):** Zero-config, file at `data/slackwoot.db`. Good for single-host deployments and development.
 
 **Production (PostgreSQL):**
 ```yaml
 database_url: "postgresql+asyncpg://user:password@host:5432/slackwoot"
 ```
 
-Run migrations after any upgrade:
-```bash
-make db-upgrade
-# or inside Docker:
-docker compose exec slackwoot alembic upgrade head
-```
+Tables are created automatically on startup if they don't exist. If you ever need schema migrations in the future (adding columns after upgrading), Alembic can be added at that point.
 
 ---
 

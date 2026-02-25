@@ -2,7 +2,6 @@
 set -e
 
 echo "Running database migrations..."
-alembic upgrade head
 
 # Optional: simple wait-for DB port if you uncomment postgres service later
 # until nc -z postgres 5432; do

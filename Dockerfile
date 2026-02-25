@@ -21,10 +21,10 @@ WORKDIR /app
 # Copy installed packages from builder stage
 COPY --from=builder /install /usr/local
 
-# Copy application source and migrations
+# Copy application source
 COPY --from=builder /build/src ./src
-COPY alembic/ ./alembic/
-COPY alembic.ini .
+
+# Copy entrypoint
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
