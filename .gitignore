@@ -38,3 +38,9 @@ Thumbs.db
 
 # --- Docker / compose extras (if any) ---
 *.local.yml
+
+# --- database files ---
+*.db
+
+# --- alembic version files ---
+alembic/versions/
