@@ -9,3 +9,5 @@ aiofiles>=23.2.1
 sqlalchemy[asyncio]>=2.0.0
 aiosqlite>=0.20.0
 asyncpg>=0.29.0
+cryptography>=42.0.0
+bcrypt>=4.1.0

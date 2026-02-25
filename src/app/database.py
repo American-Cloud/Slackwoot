@@ -2,9 +2,9 @@
 Database setup for SlackWoot.
 
 Uses SQLAlchemy async with SQLite (dev) or PostgreSQL (production).
-Connection URL is configured via DATABASE_URL in config.yaml or env var.
+Connection URL is read from the DATABASE_URL environment variable.
 
-SQLite:   sqlite+aiosqlite:///./data/slackwoot.db
+SQLite:   sqlite+aiosqlite:///./data/slackwoot.db  (default)
 Postgres: postgresql+asyncpg://user:pass@host:5432/slackwoot
 """
 
@@ -12,22 +12,22 @@ import logging
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
-from app.config import settings
+from app.config import get_database_url
 
 logger = logging.getLogger(__name__)
+
+DATABASE_URL = get_database_url()
 
 
 class Base(DeclarativeBase):
     pass
 
 
-# Engine is created once at module import — settings must be loaded first
 engine = create_async_engine(
-    settings.database_url,
-    echo=settings.log_level.upper() == "DEBUG",  # Log SQL only in debug mode
-    pool_pre_ping=True,                           # Detect stale connections
-    # SQLite-specific: check_same_thread=False required for async
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
+    DATABASE_URL,
+    echo=False,  # Set to True temporarily to debug SQL queries
+    pool_pre_ping=True,  # Detect and recycle stale connections
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -38,7 +38,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db() -> AsyncSession:
-    """FastAPI dependency — yields a DB session and ensures cleanup."""
+    """FastAPI dependency — yields a DB session per request, commits on success."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -49,7 +49,12 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Create all tables if they don't exist. Called at app startup."""
+    """
+    Create all tables if they don't exist. Called once at app startup.
+    Safe to call repeatedly — existing tables are not modified.
+    For schema changes after initial deployment, tables must be altered manually
+    or the database recreated (acceptable for early-stage apps).
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info(f"Database initialized: {settings.database_url}")
+    logger.info(f"Database initialized: {DATABASE_URL}")

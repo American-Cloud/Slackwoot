@@ -1,20 +1,32 @@
-"""Slack API helpers for SlackWoot."""
+"""
+Slack API helpers for SlackWoot.
+
+All functions accept an optional db session to read the bot token from the
+database. If no db is passed, the token must be set via _override_token
+(used in tests). This allows token changes in the UI to take effect immediately.
+"""
 
 import logging
 from typing import Optional
 
 import httpx
 
-from app.config import settings
-
 logger = logging.getLogger(__name__)
 
 SLACK_API = "https://slack.com/api"
 
 
-def _headers():
+async def _get_token(db=None) -> str:
+    """Read the Slack bot token from the database."""
+    if db is None:
+        return ""
+    from app.db_config import get_setting
+    return await get_setting(db, "slack_bot_token")
+
+
+def _headers(token: str) -> dict:
     return {
-        "Authorization": f"Bearer {settings.slack_bot_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -26,12 +38,14 @@ async def post_message(
     blocks: Optional[list] = None,
     username: Optional[str] = None,
     icon_emoji: Optional[str] = None,
-    attachments_text: Optional[str] = None,  # Extra line appended for attachment info
+    db=None,
 ) -> Optional[dict]:
-    """Post a message to Slack. Falls back to a placeholder if text is empty."""
-
-    # Slack requires non-empty text. Build a sensible fallback from attachments.
-    safe_text = text or attachments_text or "(attachment)"
+    """
+    Post a message to Slack. Falls back to a placeholder if text is empty.
+    Slack requires non-empty text even when blocks are provided.
+    """
+    token = await _get_token(db)
+    safe_text = text or "(attachment)"
 
     payload = {"channel": channel_id, "text": safe_text}
     if thread_ts:
@@ -44,62 +58,34 @@ async def post_message(
         payload["icon_emoji"] = icon_emoji
 
     async with httpx.AsyncClient() as client:
-        r = await client.post(f"{SLACK_API}/chat.postMessage", json=payload, headers=_headers())
+        r = await client.post(
+            f"{SLACK_API}/chat.postMessage",
+            json=payload,
+            headers=_headers(token),
+        )
         data = r.json()
         if not data.get("ok"):
-            logger.error(f"Slack API error: {data.get('error')} | payload: {payload}")
+            logger.error(f"Slack API error: {data.get('error')} | channel={channel_id}")
             return None
         return data
 
 
-async def post_file_link(
-    channel_id: str,
-    thread_ts: str,
-    username: str,
-    icon_emoji: str,
-    attachments: list,
-) -> Optional[dict]:
-    """Post attachment links as a Slack message with file info blocks."""
-    if not attachments:
-        return None
-
-    lines = []
-    for att in attachments:
-        url = att.get("data_url") or att.get("file_path", "")
-        name = att.get("file_name", "attachment")
-        file_type = att.get("file_type", "")
-        size = att.get("file_size", 0)
-        size_str = f"{round(size/1024, 1)} KB" if size else ""
-
-        if url:
-            lines.append(f"📎 <{url}|{name}> {f'({size_str})' if size_str else ''} {file_type}")
-        else:
-            lines.append(f"📎 {name} {f'({size_str})' if size_str else ''} {file_type}")
-
-    text = "\n".join(lines)
-    return await post_message(
-        channel_id=channel_id,
-        text=text,
-        thread_ts=thread_ts,
-        username=username,
-        icon_emoji=icon_emoji,
-    )
-
-
-async def get_user_info(user_id: str) -> Optional[dict]:
+async def get_user_info(user_id: str, db=None) -> Optional[dict]:
+    """Fetch Slack user info by user ID."""
+    token = await _get_token(db)
     async with httpx.AsyncClient() as client:
         r = await client.get(
             f"{SLACK_API}/users.info",
             params={"user": user_id},
-            headers=_headers(),
+            headers=_headers(token),
         )
         data = r.json()
         return data.get("user") if data.get("ok") else None
 
 
-async def is_bot_user(user_id: str) -> bool:
-    """Returns True if the user is a bot — used to prevent reply loops."""
-    user = await get_user_info(user_id)
+async def is_bot_user(user_id: str, db=None) -> bool:
+    """Return True if the Slack user is a bot or the Slackbot system user."""
+    user = await get_user_info(user_id, db)
     if not user:
-        return True  # Treat unknown as bot to be safe
+        return True  # Treat unknown users as bots (safe default)
     return user.get("is_bot", False) or user.get("id") == "USLACKBOT"

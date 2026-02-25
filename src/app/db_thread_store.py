@@ -1,14 +1,14 @@
 """
-DB-backed thread store — replaces thread_store.py (JSON file).
+DB-backed thread store.
 
-Drop-in replacement with the same interface so routes need minimal changes.
-All operations are async and session-scoped.
+Maps Chatwoot conversation IDs to Slack thread timestamps.
+Replaces the old threads.json file.
 """
 
 import logging
 from typing import Optional
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import ThreadMapping
@@ -74,17 +74,25 @@ async def delete_thread(db: AsyncSession, conversation_id: int) -> bool:
     return result.rowcount > 0
 
 
-async def all_threads(db: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict]:
-    result = await db.execute(
-        select(ThreadMapping)
-        .order_by(ThreadMapping.updated_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
+async def all_threads(
+    db: AsyncSession,
+    limit: int = 25,
+    offset: int = 0,
+    inbox_id: Optional[int] = None,
+) -> list[dict]:
+    """Return thread mappings, optionally filtered by inbox_id."""
+    q = select(ThreadMapping).order_by(ThreadMapping.updated_at.desc())
+    if inbox_id is not None:
+        q = q.where(ThreadMapping.inbox_id == inbox_id)
+    q = q.limit(limit).offset(offset)
+    result = await db.execute(q)
     return [row.to_dict() for row in result.scalars().all()]
 
 
-async def count_threads(db: AsyncSession) -> int:
-    from sqlalchemy import func
-    result = await db.execute(select(func.count()).select_from(ThreadMapping))
+async def count_threads(db: AsyncSession, inbox_id: Optional[int] = None) -> int:
+    """Count thread mappings, optionally filtered by inbox_id."""
+    q = select(func.count()).select_from(ThreadMapping)
+    if inbox_id is not None:
+        q = q.where(ThreadMapping.inbox_id == inbox_id)
+    result = await db.execute(q)
     return result.scalar_one()

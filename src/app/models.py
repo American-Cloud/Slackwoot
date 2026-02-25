@@ -2,15 +2,19 @@
 SQLAlchemy ORM models for SlackWoot.
 
 Tables:
-  thread_mappings  — Chatwoot conversation ↔ Slack thread (replaces threads.json)
-  activity_log     — Persisted webhook event log (replaces in-memory deque)
+  app_config       — Encrypted key/value store for all application settings
+                     (Chatwoot credentials, Slack credentials, admin password hash,
+                     webhook IP whitelist). Values encrypted with SECRET_KEY.
+  inbox_mappings   — Chatwoot inbox → Slack channel mappings (replaces config.yaml)
+  thread_mappings  — Chatwoot conversation ↔ Slack thread timestamp
+  activity_log     — Persisted webhook event log
 
-Note: inbox_mappings remain in config.yaml for now (they contain no secrets
-but are config-time data). They will move to DB in a future UI task.
+All sensitive values are encrypted at rest using app.crypto.
+The only secret required at deploy time is the SECRET_KEY env var.
 """
 
 from datetime import datetime, timezone
-from sqlalchemy import Integer, String, DateTime, Text
+from sqlalchemy import Integer, String, DateTime, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -18,6 +22,66 @@ from app.database import Base
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class AppConfig(Base):
+    """
+    Key/value store for all application configuration.
+
+    Sensitive values (tokens, secrets, password hash) are stored encrypted.
+    Non-sensitive values (URLs, account IDs, log level) are stored as plaintext.
+
+    Known keys:
+      chatwoot_base_url       — plaintext
+      chatwoot_account_id     — plaintext
+      chatwoot_api_token      — encrypted
+      chatwoot_webhook_secret — encrypted
+      slack_bot_token         — encrypted
+      slack_signing_secret    — encrypted
+      admin_password_hash     — bcrypt hash (not Fernet-encrypted)
+      webhook_allowed_ips     — plaintext, comma-separated
+      log_level               — plaintext
+      database_url            — plaintext (injected via env, not stored here)
+    """
+    __tablename__ = "app_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+
+class InboxMapping(Base):
+    """
+    Maps a Chatwoot inbox to a Slack channel.
+    Replaces the inbox_mappings list in config.yaml.
+    """
+    __tablename__ = "inbox_mappings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    chatwoot_inbox_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
+    inbox_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    slack_channel: Mapped[str] = mapped_column(String(128), nullable=False)  # e.g. #support-web
+    slack_channel_id: Mapped[str] = mapped_column(String(32), nullable=False)  # e.g. C0AHGAWTHFA
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "chatwoot_inbox_id": self.chatwoot_inbox_id,
+            "inbox_name": self.inbox_name,
+            "slack_channel": self.slack_channel,
+            "slack_channel_id": self.slack_channel_id,
+            "active": self.active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class ThreadMapping(Base):
@@ -31,9 +95,11 @@ class ThreadMapping(Base):
     conversation_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
     slack_thread_ts: Mapped[str] = mapped_column(String(64), nullable=False)
     slack_channel_id: Mapped[str] = mapped_column(String(32), nullable=False)
-    inbox_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    inbox_id: Mapped[int] = mapped_column(Integer, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
 
     def to_dict(self) -> dict:
         return {

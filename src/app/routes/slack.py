@@ -4,6 +4,9 @@ Slack → Chatwoot handler.
 Receives Slack Events API callbacks (message replies in threads)
 and forwards them back to the correct Chatwoot conversation.
 
+All credentials are read from the database at request time so changes
+made in the UI take effect without restarting the app.
+
 Anti-loop protection: only real human users trigger a Chatwoot reply.
 Bot messages, message edits, and deletions are ignored.
 """
@@ -18,9 +21,9 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import get_db
 from app import slack_client, chatwoot_client, db_thread_store, db_activity_log
+from app.db_config import get_setting
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,13 +34,19 @@ _seen_event_ids: set = set()
 _MAX_SEEN = 1000
 
 
-def _verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
+async def _verify_slack_signature(
+    body: bytes,
+    timestamp: str,
+    signature: str,
+    db: AsyncSession,
+) -> bool:
     """
     Verify the Slack request signature using HMAC-SHA256.
     See: https://api.slack.com/authentication/verifying-requests-from-slack
-    Skipped if slack_signing_secret is not configured (useful for local dev).
+    Skipped if slack_signing_secret is not configured in the DB.
     """
-    if not settings.slack_signing_secret:
+    secret = await get_setting(db, "slack_signing_secret")
+    if not secret:
         return True
     try:
         # Reject requests older than 5 minutes to prevent replay attacks
@@ -46,11 +55,7 @@ def _verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool
     except (ValueError, TypeError):
         return False
     base = f"v0:{timestamp}:{body.decode()}"
-    expected = "v0=" + hmac.new(
-        settings.slack_signing_secret.encode(),
-        base.encode(),
-        hashlib.sha256,
-    ).hexdigest()
+    expected = "v0=" + hmac.new(secret.encode(), base.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -71,7 +76,7 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)):
     # Verify signature for all real events (after challenge — challenge has no sig)
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
-    if not _verify_slack_signature(body, timestamp, signature):
+    if not await _verify_slack_signature(body, timestamp, signature, db):
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
 
     event = payload.get("event", {})

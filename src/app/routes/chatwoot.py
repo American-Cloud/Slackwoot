@@ -6,6 +6,9 @@ Receives webhook events from Chatwoot and:
   - Posts subsequent messages as Slack thread replies
   - Posts status changes (resolved/reopened/pending) to the thread
   - Ignores messages we sent ourselves to prevent echo loops
+
+All configuration (tokens, mappings) is read from the database at request time
+so changes made in the UI take effect without restarting the app.
 """
 
 import hashlib
@@ -17,10 +20,10 @@ from typing import Optional
 from fastapi import APIRouter, Request, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings, InboxMapping
 from app.database import get_db
-from app import slack_client
-from app import db_thread_store, db_activity_log
+from app import slack_client, db_thread_store, db_activity_log, db_inbox_mappings
+from app.db_config import get_setting
+from app.models import InboxMapping
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,27 +39,15 @@ def register_our_message(message_id: int):
     _our_message_ids.append(message_id)
 
 
-def get_mapping_for_inbox(inbox_id: int) -> Optional[InboxMapping]:
-    """Return the InboxMapping for a given Chatwoot inbox_id, or None if unmapped."""
-    for m in settings.inbox_mappings:
-        if m.chatwoot_inbox_id == inbox_id:
-            return m
-    return None
-
-
-def verify_signature(body: bytes, signature: str) -> bool:
+async def verify_signature(body: bytes, signature: str, db: AsyncSession) -> bool:
     """
     Verify Chatwoot webhook HMAC signature.
-    Skipped if chatwoot_webhook_secret is not set (Chatwoot doesn't support
-    signing yet — field is reserved for when they add it).
+    Skipped if chatwoot_webhook_secret is not configured.
     """
-    if not settings.chatwoot_webhook_secret:
+    secret = await get_setting(db, "chatwoot_webhook_secret")
+    if not secret:
         return True
-    expected = hmac.new(
-        settings.chatwoot_webhook_secret.encode(),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
+    expected = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -79,15 +70,17 @@ def format_attachments_text(attachments: list) -> str:
     return "\n".join(parts)
 
 
-def build_new_conversation_blocks(payload: dict, chatwoot_url: str) -> list:
+async def build_new_conversation_blocks(
+    payload: dict,
+    chatwoot_url: str,
+    account_id: str,
+) -> list:
     """Build Slack Block Kit payload for the opening message of a new conversation."""
     conv = payload.get("conversation", {})
     sender = payload.get("sender", {})
     inbox = payload.get("inbox", {})
-    account = payload.get("account", {})
     content = payload.get("content") or ""
     attachments = payload.get("attachments", []) or []
-    account_id = account.get("id", settings.chatwoot_account_id)
     conv_id = conv.get("id", "?")
     additional = conv.get("additional_attributes", {})
     conv_url = f"{chatwoot_url.rstrip('/')}/app/accounts/{account_id}/conversations/{conv_id}"
@@ -163,7 +156,7 @@ async def chatwoot_webhook(request: Request, db: AsyncSession = Depends(get_db))
     body = await request.body()
 
     sig = request.headers.get("x-hub-signature-256", "")
-    if not verify_signature(body, sig):
+    if not await verify_signature(body, sig, db):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:
@@ -211,14 +204,16 @@ async def handle_message(payload: dict, db: AsyncSession):
             "Missing inbox_id or conversation_id", status="error")
         return
 
-    mapping = get_mapping_for_inbox(inbox_id)
-    if not mapping:
-        logger.info(f"No mapping for inbox_id={inbox_id}, skipping")
+    # Look up mapping from DB (was previously from config.yaml)
+    mapping = await db_inbox_mappings.get_by_inbox_id(db, inbox_id)
+    if not mapping or not mapping.active:
+        logger.info(f"No active mapping for inbox_id={inbox_id}, skipping")
         await db_activity_log.add(db, inbox_id, f"Inbox {inbox_id}", "message_created",
-            f"No mapping configured for inbox {inbox_id}", status="ignored")
+            f"No active mapping configured for inbox {inbox_id}", status="ignored")
         return
 
-    chatwoot_url = mapping.chatwoot_url or settings.chatwoot_base_url
+    chatwoot_url = await get_setting(db, "chatwoot_base_url")
+    account_id = await get_setting(db, "chatwoot_account_id")
     thread_data = await db_thread_store.get_thread(db, conversation_id)
 
     sender = payload.get("sender", {})
@@ -257,7 +252,7 @@ async def handle_message(payload: dict, db: AsyncSession):
     else:
         # New conversation — create the opening Slack message and store the thread_ts
         logger.info(f"Creating new Slack thread for conv {conversation_id} in {mapping.slack_channel}")
-        blocks = build_new_conversation_blocks(payload, chatwoot_url)
+        blocks = await build_new_conversation_blocks(payload, chatwoot_url, account_id)
         result = await slack_client.post_message(
             channel_id=mapping.slack_channel_id,
             text=f"{username}: {full_text}",
@@ -292,7 +287,7 @@ async def handle_status_change(payload: dict, db: AsyncSession):
     text = status_emoji_text(status, meta)
 
     inbox_id = conv.get("contact_inbox", {}).get("inbox_id")
-    mapping = get_mapping_for_inbox(inbox_id) if inbox_id else None
+    mapping = await db_inbox_mappings.get_by_inbox_id(db, inbox_id) if inbox_id else None
     inbox_name = mapping.inbox_name if mapping else f"Inbox {inbox_id}"
 
     result = await slack_client.post_message(
