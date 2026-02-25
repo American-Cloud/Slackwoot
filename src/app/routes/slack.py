@@ -5,6 +5,7 @@ Receives Slack Events API callbacks (message replies in threads)
 and forwards them back to the correct Chatwoot conversation.
 
 Anti-loop protection: only real human users trigger a Chatwoot reply.
+Bot messages, message edits, and deletions are ignored.
 """
 
 import hashlib
@@ -13,24 +14,33 @@ import json
 import logging
 import time
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app import thread_store, slack_client, chatwoot_client, activity_log
+from app.database import get_db
+from app import slack_client, chatwoot_client, db_thread_store, db_activity_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Track recently processed Slack event IDs to deduplicate
+# Track recently processed Slack event IDs to deduplicate retries.
+# Slack may deliver the same event more than once if we don't respond fast enough.
 _seen_event_ids: set = set()
 _MAX_SEEN = 1000
 
 
 def _verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
+    """
+    Verify the Slack request signature using HMAC-SHA256.
+    See: https://api.slack.com/authentication/verifying-requests-from-slack
+    Skipped if slack_signing_secret is not configured (useful for local dev).
+    """
     if not settings.slack_signing_secret:
         return True
     try:
+        # Reject requests older than 5 minutes to prevent replay attacks
         if abs(time.time() - int(timestamp)) > 300:
             return False
     except (ValueError, TypeError):
@@ -45,7 +55,7 @@ def _verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool
 
 
 @router.post("/events")
-async def slack_events(request: Request):
+async def slack_events(request: Request, db: AsyncSession = Depends(get_db)):
     body = await request.body()
 
     try:
@@ -58,7 +68,7 @@ async def slack_events(request: Request):
     if payload.get("type") == "url_verification":
         return JSONResponse(content={"challenge": payload.get("challenge")})
 
-    # Now verify signature for all real events
+    # Verify signature for all real events (after challenge — challenge has no sig)
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
     if not _verify_slack_signature(body, timestamp, signature):
@@ -68,7 +78,7 @@ async def slack_events(request: Request):
     event_type = event.get("type")
     event_id = payload.get("event_id", "")
 
-    # Deduplicate events
+    # Deduplicate: Slack retries delivery if we don't respond in time
     if event_id in _seen_event_ids:
         return {"ok": True}
     _seen_event_ids.add(event_id)
@@ -78,7 +88,7 @@ async def slack_events(request: Request):
     if event_type != "message":
         return {"ok": True}
 
-    # --- Anti-loop: Ignore bot messages ---
+    # ── Anti-loop: ignore bot/system messages ────────────────────────────────
     subtype = event.get("subtype")
     bot_id = event.get("bot_id")
     user_id = event.get("user")
@@ -90,21 +100,22 @@ async def slack_events(request: Request):
     if not user_id:
         return {"ok": True}
 
-    # Verify it's a real human via Slack API
+    # Double-check via Slack API that this isn't a bot user
     if await slack_client.is_bot_user(user_id):
         logger.debug(f"Ignoring message from bot user {user_id}")
         return {"ok": True}
+    # ─────────────────────────────────────────────────────────────────────────
 
-    # Only process threaded replies (has thread_ts and is NOT the parent)
+    # Only process threaded replies (has thread_ts and is NOT the parent message)
     thread_ts = event.get("thread_ts")
     message_ts = event.get("ts")
 
     if not thread_ts or thread_ts == message_ts:
-        # Top-level message in a channel — not a reply to a conversation thread
+        # Top-level message in channel — not a reply to one of our conversation threads
         return {"ok": True}
 
-    # Look up which Chatwoot conversation this thread belongs to
-    conversation_id = thread_store.get_conversation_by_thread(thread_ts)
+    # Look up which Chatwoot conversation this Slack thread belongs to
+    conversation_id = await db_thread_store.get_conversation_by_thread(db, thread_ts)
     if not conversation_id:
         logger.debug(f"No Chatwoot conversation found for Slack thread_ts={thread_ts}")
         return {"ok": True}
@@ -124,10 +135,10 @@ async def slack_events(request: Request):
     )
 
     if result:
-        activity_log.add(None, "Slack", "slack_reply",
+        await db_activity_log.add(db, None, "Slack", "slack_reply",
             f"[CID-{conversation_id}] {user_name} → Chatwoot: {text[:80]}", status="ok")
     else:
-        activity_log.add(None, "Slack", "slack_reply",
+        await db_activity_log.add(db, None, "Slack", "slack_reply",
             f"[CID-{conversation_id}] Failed to send reply to Chatwoot", status="error")
 
     return {"ok": True}

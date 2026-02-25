@@ -11,15 +11,17 @@ SlackWoot routes Chatwoot conversations to specific Slack channels based on inbo
 - 📥 **Per-inbox routing** — map each Chatwoot inbox to its own Slack channel
 - 🧵 **Full threading** — each conversation gets its own Slack thread
 - ↩️ **Two-way replies** — reply in a Slack thread → message appears in Chatwoot
+- 📎 **Attachment support** — file/image attachments shown as links in Slack
 - 🔄 **Status updates** — resolved/reopened/pending posted to Slack thread
 - 🛡️ **Loop prevention** — bot messages ignored; only real human Slack replies forwarded
-- 📡 **Live activity log** — dashboard shows real-time webhook events per inbox
-- 🗂 **Inbox browser** — see all your Chatwoot inboxes and IDs from the UI
+- 📡 **Persistent activity log** — DB-backed event log survives restarts
+- 🗂 **Inbox browser** — see all Chatwoot inboxes and IDs from the UI
 - 🔒 **Basic auth** — protect the `/admin` UI with a username/password
-- 🌐 **IP whitelist** — restrict `/webhook/*` to specific IPs (e.g. your Chatwoot server)
+- 🌐 **IP whitelist** — restrict `/webhook/*` to specific IPs or CIDR ranges
 - 📖 **Read-only API docs** — Swagger UI with "Try It Out" disabled; ReDoc also available
+- 🗄️ **SQLite or PostgreSQL** — SQLite for dev/single-host, Postgres for production/K8s
 - ⚙️ **Config-first** — `config.yaml` or environment variables
-- 🐳 **Docker ready** — one-command deploy
+- 🐳 **Docker ready** — multi-stage build, non-root user, healthcheck included
 
 ---
 
@@ -30,11 +32,13 @@ slackwoot/
 ├── src/
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py              # FastAPI app, middleware registration, docs
-│       ├── config.py            # Settings & config loading
+│       ├── main.py              # FastAPI app, middleware, docs setup
+│       ├── config.py            # Settings loader (YAML + env vars)
 │       ├── middleware.py        # IP whitelist + Basic auth middleware
-│       ├── thread_store.py      # Conversation → Slack thread persistence
-│       ├── activity_log.py      # In-memory activity log for UI
+│       ├── database.py          # SQLAlchemy async engine + session factory
+│       ├── models.py            # ORM models: ThreadMapping, ActivityLogEntry
+│       ├── db_thread_store.py   # DB-backed thread store (replaces threads.json)
+│       ├── db_activity_log.py   # DB-backed activity log (replaces in-memory deque)
 │       ├── slack_client.py      # Slack API wrapper
 │       ├── chatwoot_client.py   # Chatwoot API wrapper
 │       ├── routes/
@@ -46,14 +50,20 @@ slackwoot/
 │       │   ├── index.html
 │       │   └── admin.html
 │       └── static/              # CSS/JS assets
-├── data/
-│   └── threads.json             # Thread mapping store (auto-created)
+├── alembic/                     # Database migrations
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+│       └── 001_initial_schema.py
+├── data/                        # Runtime data (auto-created, gitignored)
+│   └── slackwoot.db             # SQLite database (default)
+├── alembic.ini
 ├── config.example.yaml
 ├── config.yaml                  # Your config (gitignored)
 ├── pyproject.toml
 ├── Makefile
-├── docker-compose.yml
 ├── Dockerfile
+├── docker-compose.yml
 ├── requirements.txt
 └── run.py
 ```
@@ -67,7 +77,7 @@ slackwoot/
 git clone https://github.com/your-org/slackwoot.git
 cd slackwoot
 
-# 2. Create virtualenv
+# 2. Create and activate a virtualenv
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
@@ -75,12 +85,57 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 cp config.example.yaml config.yaml
 nano config.yaml
 
-# 4. Install and run
-make run       # production (no reload)
-make dev       # same, alias for development
+# 4. Install dependencies
+make install
+
+# 5. Run database migrations
+make db-upgrade
+
+# 6. Start the app
+make run
 ```
 
 The app runs at `http://localhost:8000`.
+
+### Makefile targets
+
+| Command | Description |
+|---|---|
+| `make install` | Install Python dependencies via `pip install -e .` |
+| `make run` | Install deps and start the server |
+| `make dev` | Same as `make run` (alias for development) |
+| `make db-upgrade` | Apply all pending Alembic migrations |
+| `make db-downgrade` | Roll back the last migration |
+| `make db-history` | Show migration history |
+| `make migrate msg="description"` | Generate a new migration from model changes |
+
+---
+
+## 🐳 Docker
+
+```bash
+# Build and start
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Run migrations inside the container
+docker compose exec slackwoot alembic upgrade head
+
+# Rebuild after code changes
+docker compose up -d --build
+```
+
+The SQLite database is persisted in a named Docker volume (`slackwoot_data`).
+
+### PostgreSQL (production)
+
+Uncomment the `postgres` service in `docker-compose.yml` and set:
+```yaml
+environment:
+  DATABASE_URL: postgresql+asyncpg://slackwoot:password@postgres:5432/slackwoot
+```
 
 ---
 
@@ -88,19 +143,19 @@ The app runs at `http://localhost:8000`.
 
 All values can be set in `config.yaml` **or** as environment variables.
 
-| config.yaml key / Env Var | Description |
-|---|---|
-| `CHATWOOT_BASE_URL` | Your Chatwoot instance URL |
-| `CHATWOOT_API_TOKEN` | User access token (Settings → Profile → Access Token) |
-| `CHATWOOT_ACCOUNT_ID` | Numeric account ID (visible in URL when logged in) |
-| `CHATWOOT_WEBHOOK_SECRET` | Optional HMAC secret (reserved for future Chatwoot support) |
-| `SLACK_BOT_TOKEN` | Bot token starting with `xoxb-` |
-| `SLACK_SIGNING_SECRET` | From Slack App → Basic Information |
-| `ADMIN_USERNAME` | Basic auth username for `/admin` — leave blank to disable |
-| `ADMIN_PASSWORD` | Basic auth password for `/admin` |
-| `WEBHOOK_ALLOWED_IPS` | Comma-separated IPs/CIDRs allowed to call `/webhook/*` |
-| `LOG_LEVEL` | `INFO` (default), `DEBUG`, `WARNING` |
-| `THREAD_STORE_PATH` | Path to thread JSON file (default: `data/threads.json`) |
+| config.yaml key | Env Var | Description |
+|---|---|---|
+| `chatwoot_base_url` | `CHATWOOT_BASE_URL` | Your Chatwoot instance URL |
+| `chatwoot_api_token` | `CHATWOOT_API_TOKEN` | User access token (Profile → Access Token) |
+| `chatwoot_account_id` | `CHATWOOT_ACCOUNT_ID` | Numeric account ID (visible in URL) |
+| `chatwoot_webhook_secret` | `CHATWOOT_WEBHOOK_SECRET` | Reserved for future HMAC signing support |
+| `slack_bot_token` | `SLACK_BOT_TOKEN` | Bot token starting with `xoxb-` |
+| `slack_signing_secret` | `SLACK_SIGNING_SECRET` | From Slack App → Basic Information |
+| `admin_username` | `ADMIN_USERNAME` | Basic auth username for `/admin` (blank = disabled) |
+| `admin_password` | `ADMIN_PASSWORD` | Basic auth password for `/admin` |
+| `webhook_allowed_ips` | `WEBHOOK_ALLOWED_IPS` | Comma-separated IPs/CIDRs for `/webhook/*` |
+| `database_url` | `DATABASE_URL` | SQLAlchemy DB URL (default: SQLite) |
+| `log_level` | `LOG_LEVEL` | `INFO` (default), `DEBUG`, `WARNING` |
 
 ### Multiple mappings via environment variables
 
@@ -120,7 +175,7 @@ SLACKWOOT_MAPPING_2=inbox_id:1,inbox_name:Email,slack_channel:#support-email,sla
 
 > **Tip:** Visit `/admin` and click **Load Inboxes** to see all your inbox IDs without leaving the browser.
 
-> **IP Whitelist:** To restrict the webhook to only your Chatwoot server, add its IP to `webhook_allowed_ips` in `config.yaml`.
+> **IP Whitelist:** Add your Chatwoot server's IP to `webhook_allowed_ips` in `config.yaml` to restrict webhook access.
 
 ---
 
@@ -150,15 +205,18 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 ### 4. Install & Configure
 
 1. **OAuth & Permissions** → Install to Workspace → copy the `xoxb-` token
-2. Add token and signing secret to `config.yaml`
-3. Invite the bot to each mapped channel: `/invite @SlackWoot`
+2. **Basic Information** → App Credentials → copy the Signing Secret
+3. Add both to `config.yaml`
+4. Invite the bot to each mapped channel: `/invite @SlackWoot`
+
+> **Note:** Reinstalling the Slack app regenerates the Signing Secret. Always grab it fresh after any reinstall.
 
 ---
 
 ## 🔒 Security
 
 ### Admin Basic Auth
-Set `admin_username` and `admin_password` in `config.yaml`. The browser will prompt for credentials when accessing `/admin`. Leave blank to disable (open access).
+Set `admin_username` and `admin_password` in `config.yaml`. The browser prompts for credentials when accessing `/admin`. Leave blank to disable.
 
 ### Webhook IP Whitelist
 Restrict `/webhook/chatwoot` to your Chatwoot server's IP:
@@ -167,11 +225,16 @@ webhook_allowed_ips:
   - "1.2.3.4"        # Your Chatwoot server IP
   - "10.0.0.0/8"     # Or a CIDR range
 ```
-Leave empty to allow all IPs. The signing secret field is also available for future use when Chatwoot adds HMAC support.
 
 ### API Docs
 - `/docs` — Swagger UI with **Try It Out disabled**
 - `/redoc` — Read-only ReDoc
+
+### Docker Security
+- Multi-stage build — only runtime dependencies in the final image
+- Runs as a non-root `slackwoot` user
+- Config mounted read-only
+- Healthcheck endpoint at `/health`
 
 ---
 
@@ -180,27 +243,50 @@ Leave empty to allow all IPs. The signing secret field is also available for fut
 ### Chatwoot → Slack
 1. Contact sends a message → Chatwoot fires webhook to SlackWoot
 2. SlackWoot looks up the Slack channel mapped to that inbox
-3. First message: rich card posted to Slack, thread `ts` saved
+3. First message: rich card posted to Slack, thread `ts` saved to DB
 4. Subsequent messages: posted as thread replies
 
 ### Slack → Chatwoot
 1. Team member replies in a Slack thread
 2. SlackWoot verifies it's a real human (not a bot — loop prevention)
-3. Looks up the Chatwoot conversation for that thread
+3. Looks up the Chatwoot conversation for that thread in the DB
 4. Posts reply as an outgoing agent message in Chatwoot
 
-### Status Changes
-Resolved/reopened/pending status changes in Chatwoot are posted to the existing Slack thread automatically.
+### Loop Prevention
+When SlackWoot posts to Chatwoot via API, Chatwoot fires a webhook back. This is stopped by two layers:
+1. Chatwoot sets `sender_type: "api"` on messages created via API — SlackWoot checks this first
+2. SlackWoot registers each message ID it creates and ignores any webhook with that ID
+
+---
+
+## 🗄️ Database
+
+SlackWoot uses SQLAlchemy async with Alembic for migrations.
+
+**Default (SQLite):** Zero-config, file at `data/slackwoot.db`. Good for single-host deployments.
+
+**Production (PostgreSQL):**
+```yaml
+database_url: "postgresql+asyncpg://user:password@host:5432/slackwoot"
+```
+
+Run migrations after any upgrade:
+```bash
+make db-upgrade
+# or inside Docker:
+docker compose exec slackwoot alembic upgrade head
+```
 
 ---
 
 ## 🗺️ Roadmap
 
+- [ ] Helm chart for Kubernetes deployment
 - [ ] Web UI form to add/edit inbox mappings without editing config
-- [ ] SQLite/Redis option for persistent activity log
-- [ ] Slack message formatting (preserve markdown)
-- [ ] Attachment forwarding (images, files)
-- [ ] SSO / multi-user admin authentication
+- [ ] Slack message markdown formatting preservation
+- [ ] True inline image forwarding (upload to Slack)
+- [ ] Multiple Chatwoot account support
+- [ ] SSO / OAuth for admin UI
 
 ---
 

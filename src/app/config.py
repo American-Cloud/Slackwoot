@@ -43,6 +43,7 @@ class Settings(BaseModel):
     inbox_mappings: List[InboxMapping] = []
 
     # App
+    database_url: str = "sqlite+aiosqlite:///data/slackwoot.db"
     log_level: str = "INFO"
     thread_store_path: str = "data/threads.json"
 
@@ -66,6 +67,7 @@ def load_settings() -> Settings:
         "SLACK_SIGNING_SECRET": "slack_signing_secret",
         "ADMIN_USERNAME": "admin_username",
         "ADMIN_PASSWORD": "admin_password",
+        "DATABASE_URL": "database_url",
         "LOG_LEVEL": "log_level",
         "THREAD_STORE_PATH": "thread_store_path",
     }

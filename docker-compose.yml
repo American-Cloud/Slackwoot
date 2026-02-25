@@ -1,3 +1,10 @@
+# docker-compose.yml — local development and single-host production
+#
+# For production K8s deployment, use the Helm chart instead.
+# This compose file uses SQLite (via a named volume). To use PostgreSQL,
+# set DATABASE_URL to a postgresql+asyncpg:// connection string and add
+# a postgres service below.
+
 version: "3.9"
 
 services:
@@ -6,16 +13,52 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Mount config as read-only — secrets stay out of the image
       - ./config.yaml:/app/config.yaml:ro
+      # Persist the SQLite database across container restarts
       - slackwoot_data:/app/data
     environment:
-      # Override any config.yaml values here if preferred:
+      LOG_LEVEL: INFO
+      # DATABASE_URL defaults to sqlite+aiosqlite:///data/slackwoot.db
+      # To use PostgreSQL instead:
+      # DATABASE_URL: postgresql+asyncpg://slackwoot:password@postgres:5432/slackwoot
+      #
+      # All config.yaml values can be overridden here as env vars:
       # CHATWOOT_BASE_URL: https://your-chatwoot.example.com
       # CHATWOOT_API_TOKEN: your-token
       # SLACK_BOT_TOKEN: xoxb-...
       # SLACK_SIGNING_SECRET: ...
-      LOG_LEVEL: INFO
+      # ADMIN_USERNAME: admin
+      # ADMIN_PASSWORD: changeme
+      # WEBHOOK_ALLOWED_IPS: 1.2.3.4,10.0.0.0/8
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8000/health', timeout=5).raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s   # Give alembic + app startup time
+    # depends_on:
+      # Uncomment to use PostgreSQL instead of SQLite
+      # postgres:
+      #   condition: service_healthy
+
+  # Uncomment to use PostgreSQL instead of SQLite
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: slackwoot
+  #     POSTGRES_USER: slackwoot
+  #     POSTGRES_PASSWORD: changeme   # Use a secret in production
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+        # test: ["CMD-SHELL", "pg_isready -U slackwoot"]
+        # interval: 10s
+        # timeout: 5s
+        # retries: 5
+  #   restart: unless-stopped
 
 volumes:
   slackwoot_data:
+  # postgres_data:   # Uncomment if using postgres service above
