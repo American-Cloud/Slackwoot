@@ -14,7 +14,8 @@ SlackWoot routes Chatwoot conversations to specific Slack channels based on inbo
 - 📎 **Attachment support** — file/image attachments shown as links in Slack
 - 🔄 **Status updates** — resolved/reopened/pending posted to Slack thread
 - 🛡️ **Loop prevention** — bot messages ignored; only real human Slack replies forwarded
-- 📡 **Persistent activity log** — DB-backed event log survives restarts
+- ⏸️ **Pause per inbox** — disable a mapping without deleting it; blocks both directions
+- 📡 **Persistent activity log** — DB-backed event log with per-inbox drill-down
 - 🗄️ **DB-driven config** — all settings managed via UI, encrypted at rest
 - 🔒 **Session auth** — cookie-based login, no passwords in config files
 - 🌐 **IP whitelist** — restrict `/webhook/*` to specific IPs or CIDR ranges
@@ -57,7 +58,6 @@ slackwoot/
 │       └── static/               # CSS/JS assets
 ├── data/                         # Runtime data (auto-created, gitignored)
 │   └── slackwoot.db              # SQLite database (default)
-├── config.example.yaml           # Reference only — no longer used at runtime
 ├── pyproject.toml
 ├── Makefile
 ├── Dockerfile
@@ -81,13 +81,12 @@ cd slackwoot
 # 2. Generate a secret key
 openssl rand -hex 32
 
-# 3. Set it in docker-compose.yml
-#    Edit the SECRET_KEY value under environment:
+# 3. Set it in docker-compose.yml under environment: SECRET_KEY
 
 # 4. Start
 docker compose up -d
 
-# 5. Open http://localhost:8000 — you'll be redirected to /setup
+# 5. Open http://localhost:8000 — redirects to /setup on first run
 ```
 
 ### Local development
@@ -124,7 +123,7 @@ Subsequent credential changes are made at `/config`.
 
 ## 🔑 Environment Variables
 
-Only three env vars are used. Everything else is configured via the UI.
+Only three env vars are needed at deploy time. Everything else is configured through the UI.
 
 | Variable | Required | Description |
 |---|---|---|
@@ -132,7 +131,7 @@ Only three env vars are used. Everything else is configured via the UI.
 | `DATABASE_URL` | No | SQLAlchemy async URL. Default: `sqlite+aiosqlite:///data/slackwoot.db` |
 | `LOG_LEVEL` | No | `INFO` (default), `DEBUG`, `WARNING` |
 
-> ⚠️ If `SECRET_KEY` is lost or changed, stored credentials become unreadable and you will need to re-enter them at `/config`. Back up your `SECRET_KEY` in a secrets manager.
+> ⚠️ If `SECRET_KEY` is lost or changed, stored credentials become unreadable and must be re-entered at `/config`. Back it up in a secrets manager.
 
 ---
 
@@ -157,6 +156,35 @@ Set `DATABASE_URL` in `docker-compose.yml` and uncomment the `postgres` service:
 ```yaml
 DATABASE_URL: postgresql+asyncpg://slackwoot:password@postgres:5432/slackwoot
 ```
+
+---
+
+## 🖥️ Using the UI
+
+### Main page (`/`)
+- **Stat tiles** — live counts of mappings, tracked threads, and activity events
+- **Webhook URLs** — copy/paste into Chatwoot and Slack app settings
+- **Inbox → Channel Mappings** — full CRUD: edit, pause/enable, delete
+- **Browse Chatwoot Inboxes** — fetches your live Chatwoot inboxes; click **+ Map this** to create a mapping inline
+- **Activity Log** — paginated, filterable event log for all inboxes; auto-refreshes every 5 seconds
+
+### Inbox detail (`/inbox/{id}`)
+- Per-inbox view of active thread mappings and activity log
+- Delete individual thread mappings to force new conversations to open a fresh Slack thread
+- Activity log filtered to just that inbox — shows both `message_created` and `slack_reply` events
+
+### Config page (`/config`)
+- Update Chatwoot and Slack credentials (leave a field blank to keep the current value)
+- Set webhook IP whitelist, log level
+- Change admin password
+- All secret fields have a show/hide toggle (👁)
+
+### Pausing a mapping
+Clicking **Pause** on a mapping disables it in both directions:
+- Incoming Chatwoot messages for that inbox are ignored (logged as `ignored`)
+- Slack replies to existing threads for that inbox are dropped (logged as `ignored` with the attempted message text)
+
+Click **Enable** to resume.
 
 ---
 
@@ -198,7 +226,7 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 3. Enable events: `message_created`, `conversation_status_changed`
 4. Save
 
-The main page also has an **Add Mapping** button that fetches your available Chatwoot inboxes so you can pick one without leaving the browser.
+Use **Browse Chatwoot Inboxes** on the main page to find inbox IDs and create mappings without leaving the browser.
 
 ---
 
@@ -214,7 +242,7 @@ Stored as a bcrypt hash — never reversible even with the `SECRET_KEY`.
 All UI pages and `/api/*` routes require a valid signed session cookie. Sessions expire after 8 hours. Login at `/login`, logout at `/logout`.
 
 ### Webhook IP whitelist
-Restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable at `/config` under "Webhook IP Whitelist" (comma-separated IPs or CIDR ranges).
+Restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable at `/config` (comma-separated IPs or CIDR ranges).
 
 ### Docker
 - Multi-stage build — only runtime dependencies in the final image
@@ -227,15 +255,16 @@ Restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable at `/
 
 ### Chatwoot → Slack
 1. Contact sends message → Chatwoot fires webhook to `/webhook/chatwoot`
-2. SlackWoot looks up the Slack channel mapped to that inbox (from DB)
+2. SlackWoot checks if the inbox has an active mapping in the DB
 3. First message: rich card posted to Slack, thread `ts` saved to DB
 4. Subsequent messages: posted as Slack thread replies
 
 ### Slack → Chatwoot
 1. Team member replies in a Slack thread
-2. SlackWoot verifies it's a real human (anti-loop checks)
-3. Looks up the Chatwoot conversation for that thread in the DB
-4. Posts reply as an outgoing agent message in Chatwoot
+2. SlackWoot verifies the user is a real human (anti-loop checks)
+3. Looks up the Chatwoot conversation and inbox mapping for that thread
+4. Checks the mapping is still active — drops the reply if paused
+5. Posts reply as an outgoing agent message in Chatwoot
 
 ### Loop Prevention
 Two layers stop echo loops when SlackWoot posts to Chatwoot:
@@ -246,18 +275,20 @@ Two layers stop echo loops when SlackWoot posts to Chatwoot:
 
 ## 🗄️ Database
 
-SQLAlchemy async with SQLite (default) or PostgreSQL. Tables are created automatically on first startup.
+SQLAlchemy async with SQLite (default) or PostgreSQL. Tables are created automatically on first startup — no migration steps required.
 
 **Tables:**
 - `app_config` — encrypted key/value settings
-- `inbox_mappings` — Chatwoot inbox → Slack channel mappings
-- `thread_mappings` — active Chatwoot conversation ↔ Slack thread
-- `activity_log` — webhook event history
+- `inbox_mappings` — Chatwoot inbox → Slack channel mappings (with active flag)
+- `thread_mappings` — active Chatwoot conversation ↔ Slack thread (with inbox_id)
+- `activity_log` — webhook event history (capped at 10,000 rows, auto-pruned)
 
 ---
 
 ## 🗺️ Roadmap
 
+- [ ] Configurable pagination size for activity log and thread mapping tables
+- [ ] Multi-user support — admin and read-only roles
 - [ ] Helm chart for Kubernetes deployment
 - [ ] Slack message markdown formatting preservation
 - [ ] True inline image forwarding (upload to Slack)
