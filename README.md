@@ -75,7 +75,7 @@ slackwoot/
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/slackwoot.git
+git clone https://github.com/CodeBleu/slackwoot.git
 cd slackwoot
 
 # 2. Generate a secret key
@@ -92,7 +92,7 @@ docker compose up -d
 ### Local development
 
 ```bash
-git clone https://github.com/your-org/slackwoot.git
+git clone https://github.com/CodeBleu/slackwoot.git
 cd slackwoot
 
 python -m venv .venv
