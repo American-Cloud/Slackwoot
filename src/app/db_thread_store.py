@@ -17,13 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 async def get_thread(db: AsyncSession, conversation_id: int) -> Optional[dict]:
-    """Returns {'ts': '...', 'channel_id': '...'} or None."""
+    """Returns {'ts': '...', 'channel_id': '...', 'inbox_id': ...} or None."""
     result = await db.execute(
         select(ThreadMapping).where(ThreadMapping.conversation_id == conversation_id)
     )
     row = result.scalar_one_or_none()
     if row:
-        return {"ts": row.slack_thread_ts, "channel_id": row.slack_channel_id}
+        return {"ts": row.slack_thread_ts, "channel_id": row.slack_channel_id, "inbox_id": row.inbox_id}
     return None
 
 

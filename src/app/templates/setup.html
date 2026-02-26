@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}SlackWoot — Setup{% endblock %}
+
+{% block nav %}{% endblock %}
+
+{% block head %}
+<style>
+.secret-wrap { position: relative; }
+.secret-wrap input { padding-right: 2.6rem; }
+.secret-toggle {
+  position: absolute; right: 0.7rem; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 1rem; padding: 0; line-height: 1;
+}
+.secret-toggle:hover { color: var(--text); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="max-width:520px;margin:4rem auto;">
+  <div style="text-align:center;margin-bottom:2rem;">
+    <div style="font-size:2.5rem;margin-bottom:0.5rem;">⚡</div>
+    <h1 style="font-size:1.6rem;">Welcome to SlackWoot</h1>
+    <p class="subtitle" style="margin-bottom:0;">Let's get you connected. This only takes a minute.</p>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/setup">
+
+    <div class="card">
+      <h2>🔗 Chatwoot</h2>
+      <div class="form-group">
+        <label>Chatwoot URL</label>
+        <input type="url" name="chatwoot_base_url" placeholder="https://your-chatwoot.example.com" required
+               value="{{ request.form.chatwoot_base_url if request.form else '' }}"/>
+        <p class="form-hint">Your Chatwoot instance root URL — no trailing slash.</p>
+      </div>
+      <div class="form-group">
+        <label>API Token</label>
+        <div class="secret-wrap">
+          <input type="password" name="chatwoot_api_token" placeholder="Your user access token" required/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+        <p class="form-hint">Profile → Access Token in Chatwoot.</p>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Account ID</label>
+        <input type="number" name="chatwoot_account_id" placeholder="1" required min="1"
+               value="{{ request.form.chatwoot_account_id if request.form else '1' }}"/>
+        <p class="form-hint">Visible in your Chatwoot URL: /app/accounts/<strong>1</strong>/…</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>💬 Slack</h2>
+      <div class="form-group">
+        <label>Bot Token</label>
+        <div class="secret-wrap">
+          <input type="password" name="slack_bot_token" placeholder="xoxb-…" required/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+        <p class="form-hint">OAuth &amp; Permissions → Bot User OAuth Token.</p>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Signing Secret</label>
+        <div class="secret-wrap">
+          <input type="password" name="slack_signing_secret" placeholder="Your app signing secret" required/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+        <p class="form-hint">Basic Information → App Credentials → Signing Secret.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🔒 Admin Password</h2>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="secret-wrap">
+          <input type="password" name="admin_password" placeholder="At least 8 characters" required minlength="8"/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label>Confirm Password</label>
+        <div class="secret-wrap">
+          <input type="password" name="admin_password_confirm" placeholder="Repeat password" required/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:0.7rem;">
+      Save &amp; Get Started →
+    </button>
+  </form>
+</div>
+
+<script>
+function toggleSecret(btn) {
+  const input = btn.previousElementSibling;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+    btn.title = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+    btn.title = 'Show';
+  }
+}
+</script>
+{% endblock %}

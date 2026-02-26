@@ -244,6 +244,7 @@ async def handle_message(payload: dict, db: AsyncSession):
             thread_ts=thread_data["ts"],
             username=username,
             icon_emoji=icon_emoji,
+            db=db,
         )
         status = "ok" if result else "error"
         detail = (f"[CID-{conversation_id}] {username}: {full_text[:80]}"
@@ -257,6 +258,7 @@ async def handle_message(payload: dict, db: AsyncSession):
             channel_id=mapping.slack_channel_id,
             text=f"{username}: {full_text}",
             blocks=blocks,
+            db=db,
         )
         if result and result.get("message", {}).get("ts"):
             ts = result["message"]["ts"]
@@ -296,6 +298,7 @@ async def handle_status_change(payload: dict, db: AsyncSession):
         thread_ts=thread_data["ts"],
         username="Chatwoot",
         icon_emoji=":white_check_mark:",
+        db=db,
     )
     status_log = "ok" if result else "error"
     detail = (f"[CID-{conversation_id}] {text}"

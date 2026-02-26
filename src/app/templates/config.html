@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}SlackWoot — Config{% endblock %}
+
+{% block head %}
+<style>
+.secret-wrap { position: relative; }
+.secret-wrap input { padding-right: 2.6rem; }
+.secret-toggle {
+  position: absolute; right: 0.7rem; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; color: var(--muted);
+  font-size: 1rem; padding: 0; line-height: 1;
+}
+.secret-toggle:hover { color: var(--text); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:2rem;">
+  <a href="/" class="btn btn-muted btn-sm">← Back</a>
+  <div>
+    <h1>⚙ Configuration</h1>
+    <p class="subtitle" style="margin-bottom:0;">Credentials and app settings — stored encrypted in the database.</p>
+  </div>
+</div>
+
+{% if saved %}
+<div class="alert alert-success">✓ Configuration saved successfully.</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/config" id="config-form">
+
+  <div class="card">
+    <h2>🔗 Chatwoot</h2>
+    <div class="grid2">
+      <div class="form-group">
+        <label>Chatwoot URL</label>
+        <input type="url" name="chatwoot_base_url" required
+               value="{{ cfg.get('chatwoot_base_url', '') }}"/>
+        <p class="form-hint">No trailing slash.</p>
+      </div>
+      <div class="form-group">
+        <label>Account ID</label>
+        <input type="number" name="chatwoot_account_id" required min="1"
+               value="{{ cfg.get('chatwoot_account_id', '1') }}"/>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>API Token</label>
+      <div class="secret-wrap">
+        <input type="password" name="chatwoot_api_token"
+               placeholder="Leave blank to keep current token" autocomplete="new-password"/>
+        <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+      </div>
+      <p class="form-hint">Profile → Access Token in Chatwoot. Leave blank to keep the current token.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>💬 Slack</h2>
+    <div class="form-group">
+      <label>Bot Token</label>
+      <div class="secret-wrap">
+        <input type="password" name="slack_bot_token"
+               placeholder="Leave blank to keep current token" autocomplete="new-password"/>
+        <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+      </div>
+      <p class="form-hint">xoxb-… — OAuth &amp; Permissions → Bot User OAuth Token.</p>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Signing Secret</label>
+      <div class="secret-wrap">
+        <input type="password" name="slack_signing_secret"
+               placeholder="Leave blank to keep current secret" autocomplete="new-password"/>
+        <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+      </div>
+      <p class="form-hint">Basic Information → App Credentials → Signing Secret.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔒 Security</h2>
+    <div class="form-group">
+      <label>Webhook IP Whitelist</label>
+      <input type="text" name="webhook_allowed_ips"
+             value="{{ cfg.get('webhook_allowed_ips', '') }}"
+             placeholder="1.2.3.4, 10.0.0.0/8"/>
+      <p class="form-hint">Comma-separated IPs or CIDR ranges allowed to hit <code>/webhook/*</code>. Leave blank to allow all.</p>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label>Log Level</label>
+      <select name="log_level">
+        {% for level in ['INFO', 'DEBUG', 'WARNING', 'ERROR'] %}
+        <option value="{{ level }}" {% if cfg.get('log_level', 'INFO') == level %}selected{% endif %}>{{ level }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🔑 Change Password</h2>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:1rem;">Leave both fields blank to keep your current password.</p>
+    <div class="grid2">
+      <div class="form-group">
+        <label>New Password</label>
+        <div class="secret-wrap">
+          <input type="password" name="new_password" placeholder="At least 8 characters"
+                 minlength="8" autocomplete="new-password"/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password</label>
+        <div class="secret-wrap">
+          <input type="password" name="new_password_confirm" placeholder="Repeat new password"
+                 autocomplete="new-password"/>
+          <button type="button" class="secret-toggle" onclick="toggleSecret(this)" title="Show/hide">👁</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:1rem;">
+    <button type="submit" class="btn btn-primary">Save Configuration</button>
+    <a href="/" class="btn btn-muted">Cancel</a>
+  </div>
+
+</form>
+
+<script>
+function toggleSecret(btn) {
+  const input = btn.previousElementSibling;
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = '🙈';
+    btn.title = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = '👁';
+    btn.title = 'Show';
+  }
+}
+
+// Disable blank secret fields before submit so the server treats them
+// as "keep current value" rather than overwriting with an empty string.
+document.getElementById('config-form').addEventListener('submit', function() {
+  ['chatwoot_api_token', 'slack_bot_token', 'slack_signing_secret'].forEach(name => {
+    const el = this.querySelector(`[name="${name}"]`);
+    if (el && !el.value.trim()) el.disabled = true;
+  });
+});
+</script>
+{% endblock %}

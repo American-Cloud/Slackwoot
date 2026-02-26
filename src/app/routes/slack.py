@@ -106,7 +106,7 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)):
         return {"ok": True}
 
     # Double-check via Slack API that this isn't a bot user
-    if await slack_client.is_bot_user(user_id):
+    if await slack_client.is_bot_user(user_id, db):
         logger.debug(f"Ignoring message from bot user {user_id}")
         return {"ok": True}
     # ─────────────────────────────────────────────────────────────────────────
@@ -129,7 +129,24 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)):
     if not text:
         return {"ok": True}
 
-    user_info = await slack_client.get_user_info(user_id)
+    # Get inbox_id + inbox_name from the thread mapping so the activity log
+    # entry is associated with the correct inbox and shows up on the inbox detail page.
+    thread_data = await db_thread_store.get_thread(db, conversation_id)
+    inbox_id = thread_data["inbox_id"] if thread_data else None
+    inbox_name = "Slack"
+    if inbox_id:
+        from app import db_inbox_mappings
+        mapping = await db_inbox_mappings.get_by_inbox_id(db, inbox_id)
+        if mapping:
+            inbox_name = mapping.inbox_name
+            # If the mapping is paused, drop the reply — don't forward to Chatwoot
+            if not mapping.active:
+                logger.info(f"Dropping Slack reply for conv {conversation_id} — inbox {inbox_id} mapping is inactive")
+                await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
+                    f"[CID-{conversation_id}] Reply dropped (inactive): {text[:80]}", status="ignored")
+                return {"ok": True}
+
+    user_info = await slack_client.get_user_info(user_id, db)
     user_name = user_info.get("real_name") or user_info.get("name", "Slack User") if user_info else "Slack User"
 
     logger.info(f"Slack reply from {user_name} → Chatwoot conv {conversation_id}: {text[:80]}")
@@ -137,13 +154,14 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)):
     result = await chatwoot_client.send_message(
         conversation_id=conversation_id,
         content=text,
+        db=db,
     )
 
     if result:
-        await db_activity_log.add(db, None, "Slack", "slack_reply",
+        await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
             f"[CID-{conversation_id}] {user_name} → Chatwoot: {text[:80]}", status="ok")
     else:
-        await db_activity_log.add(db, None, "Slack", "slack_reply",
+        await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
             f"[CID-{conversation_id}] Failed to send reply to Chatwoot", status="error")
 
     return {"ok": True}
