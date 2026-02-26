@@ -288,7 +288,10 @@ async def handle_status_change(payload: dict, db: AsyncSession):
     meta = payload.get("meta", {}) or conv.get("meta", {})
     text = status_emoji_text(status, meta)
 
-    inbox_id = conv.get("contact_inbox", {}).get("inbox_id")
+    # Prefer inbox_id from the thread record — the status_changed payload does not
+    # reliably include contact_inbox, but the thread store always has it from when
+    # the conversation was first created.
+    inbox_id = thread_data.get("inbox_id") or conv.get("contact_inbox", {}).get("inbox_id")
     mapping = await db_inbox_mappings.get_by_inbox_id(db, inbox_id) if inbox_id else None
     inbox_name = mapping.inbox_name if mapping else f"Inbox {inbox_id}"
 
