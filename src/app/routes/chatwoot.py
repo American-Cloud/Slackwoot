@@ -71,6 +71,11 @@ def format_attachments_text(attachments: list) -> str:
     return "\n".join(parts)
 
 
+def _strip_html(text: str) -> str:
+    """Strip HTML tags from Chatwoot message content (handles 4.11+ rich text editor output)."""
+    return re.sub(r'<[^>]*>', '', text or "").strip()
+
+
 async def build_new_conversation_blocks(
     payload: dict,
     chatwoot_url: str,
