@@ -36,6 +36,7 @@ RUN mkdir -p /app/data \
 # Tell Python where to find the 'app' package (src/ layout)
 ENV PYTHONPATH=/app/src
 
+RUN apt-get update && apt-get install -y sqlite3 postgresql-client && apt-get clean && rm -rf /var/lib/apt/lists/*
 USER slackwoot
 
 EXPOSE 8000

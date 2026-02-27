@@ -74,6 +74,7 @@ async def setup_submit(
     await set_setting(db, "slack_signing_secret", slack_signing_secret)
     await set_setting(db, "admin_password", admin_password)  # hashed in db_config
 
+    await db.commit()
     logger.info("Initial setup completed — configuration saved to database.")
 
     # Auto-login after setup
@@ -179,7 +180,8 @@ async def config_chatwoot(
     if chatwoot_api_token.strip():
         await set_setting(db, "chatwoot_api_token", chatwoot_api_token)
     logger.info("Chatwoot settings updated.")
-    return RedirectResponse(url="/config?saved=1#section-chatwoot", status_code=302)
+    await db.commit()
+    return RedirectResponse(url="/config?saved=1", status_code=302)
 
 
 @router.post("/config/slack", response_class=HTMLResponse)
@@ -194,7 +196,8 @@ async def config_slack(
     if slack_signing_secret.strip():
         await set_setting(db, "slack_signing_secret", slack_signing_secret)
     logger.info("Slack settings updated.")
-    return RedirectResponse(url="/config?saved=1#section-slack", status_code=302)
+    await db.commit()
+    return RedirectResponse(url="/config?saved=1", status_code=302)
 
 
 @router.post("/config/security", response_class=HTMLResponse)
@@ -205,7 +208,8 @@ async def config_security(
 ):
     await set_setting(db, "webhook_allowed_ips", webhook_allowed_ips)
     logger.info("Security settings updated.")
-    return RedirectResponse(url="/config?saved=1#section-security", status_code=302)
+    await db.commit()
+    return RedirectResponse(url="/config?saved=1", status_code=302)
 
 
 @router.post("/config/password", response_class=HTMLResponse)
@@ -229,7 +233,8 @@ async def config_password(
         })
     await set_setting(db, "admin_password", new_password)
     logger.info("Admin password changed.")
-    return RedirectResponse(url="/config?saved=1#section-password", status_code=302)
+    await db.commit()
+    return RedirectResponse(url="/config?saved=1", status_code=302)
 
 
 # ── Inbox detail page ─────────────────────────────────────────────────────────

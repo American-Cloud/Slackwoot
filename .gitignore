@@ -36,6 +36,9 @@ src/data/
 *.DS_Store
 Thumbs.db
 
+# --- Environment / secrets ---
+.env
+
 # --- Docker / compose extras (if any) ---
 *.local.yml
 

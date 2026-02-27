@@ -90,6 +90,37 @@
     }
     .alert-close:hover { opacity: 1; }
     .alert-fade { transition: opacity 0.4s; }
+  /* Toast notification */
+  .toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 9999;
+    padding: 0.85rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    opacity: 0;
+    transform: translateY(1rem);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none;
+  }
+  .toast.toast-show {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .toast-success { background: #1a3d2b; border: 1px solid #2d6a4a; color: #6fcf97; }
+  .toast-error   { background: #3d1a1a; border: 1px solid #6a2d2d; color: #eb5757; }
+  .toast-close {
+    background: none; border: none; cursor: pointer;
+    color: inherit; opacity: 0.6; font-size: 1rem; padding: 0; line-height: 1;
+  }
+  .toast-close:hover { opacity: 1; }
   </style>
   <script>
     // Auto-dismiss alerts after 4s, also allow manual close via × button
@@ -129,5 +160,33 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  <!-- Toast container -->
+  <div id="toast" class="toast" role="alert"></div>
+
+  <script>
+  function showToast(message, type = 'success') {
+    const toast = document.getElementById('toast');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `<span>${message}</span><button class="toast-close" onclick="dismissToast()">×</button>`;
+    toast.classList.add('toast-show');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(dismissToast, 4000);
+  }
+  function dismissToast() {
+    const toast = document.getElementById('toast');
+    toast.classList.remove('toast-show');
+  }
+  // Show toast if redirected with ?saved=1
+  document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('saved') === '1') {
+      showToast('✓ Configuration saved successfully.');
+      // Clean up URL without reload
+      const url = new URL(window.location);
+      url.searchParams.delete('saved');
+      window.history.replaceState({}, '', url);
+    }
+  });
+  </script>
 </body>
 </html>

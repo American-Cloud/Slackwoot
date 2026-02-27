@@ -3,10 +3,10 @@
 {% block content %}
 
 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:2rem;flex-wrap:wrap;gap:1rem;">
-  <div>
-    <h1>⚡ SlackWoot</h1>
-    <p class="subtitle" style="margin-bottom:0;">Chatwoot ↔ Slack bridge · v{{ version }}</p>
-  </div>
+<div>
+  <h1>⚡ SlackWoot</h1>
+  <p class="subtitle" style="margin-bottom:0;">Chatwoot ↔ Slack bridge · v{{ version }}</p>
+</div>
 </div>
 
 <!-- Stat tiles -->
@@ -212,6 +212,7 @@ async function refreshStats() {
 }
 
 // ── Unified inbox+mapping table ───────────────────────────────────────────────
+// /api/inboxes is server-side cached for 60s so this is fast even on repeat calls.
 async function loadUnifiedTable() {
   const tbody = document.getElementById('unified-body');
   tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem;">Loading…</td></tr>';
@@ -227,11 +228,9 @@ async function loadUnifiedTable() {
     return;
   }
 
-  // Build lookup: inbox_id → mapping
   const mappingByInboxId = {};
   mappings.forEach(m => { mappingByInboxId[m.chatwoot_inbox_id] = m; });
 
-  // Store for use by modal handlers
   _unifiedData = {};
   inboxes.forEach(i => {
     _unifiedData[i.id] = { inbox: i, mapping: mappingByInboxId[i.id] || null };
@@ -247,7 +246,6 @@ async function loadUnifiedTable() {
     const typeBadge = `<span class="badge badge-blue">${inbox.channel_type}</span>`;
 
     if (m) {
-      // Mapped inbox — show channel info + actions
       const statusBadge = m.active
         ? '<span class="badge badge-green"><span class="dot" style="width:5px;height:5px;margin-right:3px;"></span>Active</span>'
         : '<span class="badge badge-muted">Inactive</span>';
@@ -255,9 +253,7 @@ async function loadUnifiedTable() {
       const toggleClass = m.active ? 'btn-yellow' : 'btn-green';
       return `<tr>
         <td><code>${inbox.id}</code></td>
-        <td>
-          <a href="/inbox/${inbox.id}" style="color:var(--accent2);text-decoration:none;font-weight:500;">${inbox.name}</a>
-        </td>
+        <td><a href="/inbox/${inbox.id}" style="color:var(--accent2);text-decoration:none;font-weight:500;">${inbox.name}</a></td>
         <td>${typeBadge}</td>
         <td><span class="badge badge-purple">${m.slack_channel}</span></td>
         <td><code>${m.slack_channel_id}</code></td>
@@ -271,7 +267,6 @@ async function loadUnifiedTable() {
         </td>
       </tr>`;
     } else {
-      // Unmapped inbox — show map button
       return `<tr style="opacity:0.7;">
         <td><code>${inbox.id}</code></td>
         <td>${inbox.name}</td>
@@ -296,7 +291,6 @@ function openAddModal(inboxId, inboxName) {
   document.getElementById('add-slack-channel-id').value  = '';
   hideErr('add-error');
   openModal('add-modal');
-  // Focus first input
   setTimeout(() => document.getElementById('add-slack-channel').focus(), 100);
 }
 
@@ -322,7 +316,7 @@ async function submitAddMapping() {
       return showErr('add-error', d.detail || 'Failed to create mapping.');
     }
     closeModal('add-modal');
-    loadUnifiedTable();
+    await loadUnifiedTable();
   } catch(e) { showErr('add-error', 'Request failed. Try again.'); }
 }
 
@@ -357,7 +351,7 @@ async function submitEditMapping() {
     });
     if (!r.ok) return showErr('edit-error', 'Failed to update mapping.');
     closeModal('edit-modal');
-    loadUnifiedTable();
+    await loadUnifiedTable();
   } catch(e) { showErr('edit-error', 'Request failed. Try again.'); }
 }
 
@@ -365,12 +359,12 @@ async function submitEditMapping() {
 async function toggleMapping(id, currentlyActive) {
   if (!confirm(`${currentlyActive ? 'Pause' : 'Enable'} this mapping?`)) return;
   await apiFetch(`/api/mappings/${id}/toggle`, { method: 'PATCH' });
-  loadUnifiedTable();
+  await loadUnifiedTable();
 }
 async function deleteMapping(id, name) {
   if (!confirm(`Delete mapping for "${name}"? This cannot be undone.`)) return;
   await apiFetch(`/api/mappings/${id}`, { method: 'DELETE' });
-  loadUnifiedTable();
+  await loadUnifiedTable();
 }
 
 // ── Activity log ──────────────────────────────────────────────────────────────
@@ -390,8 +384,8 @@ function renderLogs(data) {
     const badge = e.status === 'ok'
       ? '<span class="badge badge-green">ok</span>'
       : e.status === 'error'
-        ? '<span class="badge badge-red">error</span>'
-        : `<span class="badge badge-muted">${e.status}</span>`;
+      ? '<span class="badge badge-red">error</span>'
+      : `<span class="badge badge-muted">${e.status}</span>`;
     return `<tr>
       <td style="font-size:0.78rem;color:var(--muted);white-space:nowrap;">${e.ts}</td>
       <td style="font-size:0.8rem;">${e.inbox_name}</td>

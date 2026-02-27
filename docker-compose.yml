@@ -1,32 +1,41 @@
 # docker-compose.yml — local development and single-host production
 #
-# For production K8s deployment, use the Helm chart instead.
-# This compose file uses SQLite (via a named volume). To switch to PostgreSQL,
-# set DATABASE_URL and uncomment the postgres service below.
+# Configuration is loaded in this priority order (highest wins):
+#   1. Shell environment variables  (export SECRET_KEY=xxx)
+#   2. .env file                    (copy .env.example → .env and fill in)
+#   3. Defaults defined below       (DATABASE_URL, LOG_LEVEL, PORT)
+#
+# Quick start:
+#   cp .env.example .env
+#   # edit .env and set SECRET_KEY
+#   docker compose up -d
+#
+# For PostgreSQL instead of SQLite, set DATABASE_URL in .env and
+# uncomment the postgres service at the bottom of this file.
 
 version: "3.9"
 
 services:
   slackwoot:
     build: .
+    container_name: slackwoot
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     volumes:
-      # Persist the SQLite database across container restarts
       - slackwoot_data:/app/data
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # ── Required ───────────────────────────────────────────────────────────
-      # Generate with: openssl rand -hex 32
-      # Used to encrypt all sensitive config values stored in the database.
-      # NEVER change this after initial setup — it will invalidate all stored credentials.
-      SECRET_KEY: "changeme-generate-with-openssl-rand-hex-32"
+      # ── Required ─────────────────────────────────────────────────────────
+      # Must be set — no default. Generate with: openssl rand -hex 32
+      # Used to encrypt all sensitive config values in the database.
+      # NEVER change after initial setup — invalidates all stored credentials.
+      - SECRET_KEY=${SECRET_KEY}
 
-      # ── Optional ───────────────────────────────────────────────────────────
-      # DATABASE_URL defaults to sqlite+aiosqlite:///data/slackwoot.db
-      # To use PostgreSQL:
-      # DATABASE_URL: postgresql+asyncpg://slackwoot:password@postgres:5432/slackwoot
-
-      LOG_LEVEL: INFO
+      # ── Optional — defaults shown ─────────────────────────────────────────
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/slackwoot.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
 
       # All other settings (Chatwoot URL, Slack tokens, inbox mappings, etc.)
       # are configured through the web UI at http://localhost:8000/setup
@@ -40,13 +49,15 @@ services:
       retries: 5
       start_period: 15s
 
-  # Uncomment to use PostgreSQL instead of SQLite
+  # ── PostgreSQL (optional) ─────────────────────────────────────────────────
+  # Uncomment this service and set DATABASE_URL in .env to use PostgreSQL.
   # postgres:
   #   image: postgres:16-alpine
+  #   container_name: slackwoot_postgres
   #   environment:
   #     POSTGRES_DB: slackwoot
   #     POSTGRES_USER: slackwoot
-  #     POSTGRES_PASSWORD: changeme   # Use a Docker secret in production
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
   #   volumes:
   #     - postgres_data:/var/lib/postgresql/data
   #   healthcheck:

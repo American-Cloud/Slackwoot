@@ -18,6 +18,7 @@ SessionAuthMiddleware in middleware.py).
 """
 
 import logging
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -55,10 +56,30 @@ class MappingUpdate(BaseModel):
 
 # ── Chatwoot inboxes ──────────────────────────────────────────────────────────
 
+# Simple in-process cache for Chatwoot inboxes.
+# Inboxes change rarely — no need to hit the Chatwoot API on every table render.
+# Cache expires after 60 seconds, or is invalidated when a mapping is created/deleted.
+_inbox_cache: dict = {"data": None, "ts": 0}
+INBOX_CACHE_TTL = 60  # seconds
+
+
+def invalidate_inbox_cache():
+    _inbox_cache["data"] = None
+    _inbox_cache["ts"] = 0
+
+
 @router.get("/inboxes")
 async def list_chatwoot_inboxes(db: AsyncSession = Depends(get_db)):
-    """Fetch all Chatwoot inboxes — used in the Add Mapping flow."""
-    inboxes = await get_inboxes(db)
+    """Fetch all Chatwoot inboxes — used in the unified inbox/mapping table."""
+    global _inbox_cache
+    now = time.time()
+    if _inbox_cache["data"] is None or (now - _inbox_cache["ts"]) > INBOX_CACHE_TTL:
+        inboxes = await get_inboxes(db)
+        _inbox_cache["data"] = inboxes
+        _inbox_cache["ts"] = now
+    else:
+        inboxes = _inbox_cache["data"]
+
     all_mappings = await db_inbox_mappings.get_all(db)
     mapped_ids = {m.chatwoot_inbox_id for m in all_mappings}
     return [
@@ -84,7 +105,6 @@ async def list_mappings(db: AsyncSession = Depends(get_db)):
 @router.post("/mappings", status_code=201)
 async def create_mapping(body: MappingCreate, db: AsyncSession = Depends(get_db)):
     """Create a new inbox → Slack channel mapping."""
-    # Check for duplicate inbox ID
     existing = await db_inbox_mappings.get_by_inbox_id(db, body.chatwoot_inbox_id)
     if existing:
         raise HTTPException(
@@ -98,6 +118,7 @@ async def create_mapping(body: MappingCreate, db: AsyncSession = Depends(get_db)
         slack_channel=body.slack_channel,
         slack_channel_id=body.slack_channel_id,
     )
+    invalidate_inbox_cache()
     return mapping.to_dict()
 
 
@@ -127,6 +148,7 @@ async def delete_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
     deleted = await db_inbox_mappings.delete_mapping(db, mapping_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Mapping not found.")
+    invalidate_inbox_cache()
     return {"ok": True, "deleted": mapping_id}
 
 
