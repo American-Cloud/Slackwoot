@@ -311,6 +311,12 @@ async def handle_status_change(payload: dict, db: AsyncSession):
     mapping = await db_inbox_mappings.get_by_inbox_id(db, inbox_id) if inbox_id else None
     inbox_name = mapping.inbox_name if mapping else f"Inbox {inbox_id}"
 
+    if mapping and not mapping.active:
+        logger.info(f"Skipping status change for conv {conversation_id} — inbox {inbox_id} mapping is paused")
+        await db_activity_log.add(db, inbox_id, inbox_name, "status_changed",
+            f"[CID-{conversation_id}] Status update dropped (mapping paused): {text}", status="ignored")
+        return
+
     result = await slack_client.post_message(
         channel_id=thread_data["channel_id"],
         text=text,
