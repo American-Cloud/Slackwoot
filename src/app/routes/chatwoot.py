@@ -12,6 +12,7 @@ so changes made in the UI take effect without restarting the app.
 """
 
 import hashlib
+import re
 import hmac
 import logging
 from collections import deque
@@ -79,7 +80,12 @@ async def build_new_conversation_blocks(
     conv = payload.get("conversation", {})
     sender = payload.get("sender", {})
     inbox = payload.get("inbox", {})
-    content = payload.get("content") or ""
+    # Prefer processed_message_content (plain text, no HTML tags).
+    # Fall back to stripping HTML from content — Chatwoot 4.11+ wraps
+    # agent messages in <p> tags when the rich text editor is active.
+    _msg = payload.get("conversation", {}).get("messages", [{}])
+    _processed = _msg[-1].get("processed_message_content", "") if _msg else ""
+    content = _processed.strip() if _processed else _strip_html(payload.get("content", ""))
     attachments = payload.get("attachments", []) or []
     conv_id = conv.get("id", "?")
     additional = conv.get("additional_attributes", {})
@@ -218,7 +224,12 @@ async def handle_message(payload: dict, db: AsyncSession):
 
     sender = payload.get("sender", {})
     message_type = payload.get("message_type", "incoming")
-    content = payload.get("content") or ""
+    # Prefer processed_message_content (plain text, no HTML tags).
+    # Fall back to stripping HTML from content — Chatwoot 4.11+ wraps
+    # agent messages in <p> tags when the rich text editor is active.
+    _msg = payload.get("conversation", {}).get("messages", [{}])
+    _processed = _msg[-1].get("processed_message_content", "") if _msg else ""
+    content = _processed.strip() if _processed else _strip_html(payload.get("content", ""))
     attachments = payload.get("attachments", []) or []
     sender_name = sender.get("name", "Unknown")
 

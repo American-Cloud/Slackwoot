@@ -4,6 +4,9 @@
 
 SlackWoot routes Chatwoot conversations to specific Slack channels based on inbox — and lets your team reply directly from Slack threads back into Chatwoot.
 
+> ⚠️ **Early Development**
+> SlackWoot is under active development and may contain bugs. It is functional and in use, but APIs, config structure, and DB schema may change between versions without a formal migration path. Use in production at your own discretion — feedback and bug reports are welcome.
+
 ---
 
 ## ✨ Features
@@ -17,9 +20,32 @@ SlackWoot routes Chatwoot conversations to specific Slack channels based on inbo
 - ⏸️ **Pause per inbox** — disable a mapping without deleting it; blocks both directions
 - 📡 **Persistent activity log** — DB-backed event log with per-inbox drill-down
 - 🗄️ **DB-driven config** — all settings managed via UI, encrypted at rest
-- 🔒 **Session auth** — cookie-based login, no passwords in config files
-- 🌐 **IP whitelist** — restrict `/webhook/*` to specific IPs or CIDR ranges
+- 🔒 **Session auth** — cookie-based login protects all UI and API routes
+- 🌐 **Webhook IP whitelist** — restrict `/webhook/chatwoot` to your Chatwoot server IP
 - 🐳 **Docker ready** — multi-stage build, non-root user, one env var to deploy
+
+---
+
+## 📸 Screenshots
+
+<details>
+<summary>Click to expand screenshots</summary>
+
+### Main Page
+![Main Page](screenshots/main.png)
+
+### Inbox Detail
+![Inbox Detail](screenshots/inbox_detail.png)
+
+### First-Run Setup
+![Setup Wizard](screenshots/setup.png)
+
+### Config Page
+![Config](screenshots/config.png)
+
+</details>
+
+> Screenshots are stored in the [`screenshots/`](screenshots/) directory. To add your own, drop `.png` files there and update the paths above.
 
 ---
 
@@ -30,32 +56,32 @@ slackwoot/
 ├── src/
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py               # FastAPI app, middleware, startup validation
-│       ├── config.py             # Bootstrap config (reads SECRET_KEY, DATABASE_URL, LOG_LEVEL)
+│       ├── main.py               # FastAPI app, middleware registration, exception handlers
+│       ├── config.py             # Bootstrap config (SECRET_KEY, DATABASE_URL, LOG_LEVEL env vars)
 │       ├── crypto.py             # Fernet encryption + bcrypt password hashing
-│       ├── middleware.py         # IP whitelist + session auth middleware
+│       ├── middleware.py         # SessionAuthMiddleware + IPWhitelistMiddleware
 │       ├── database.py           # SQLAlchemy async engine + session factory
 │       ├── models.py             # ORM models: AppConfig, InboxMapping, ThreadMapping, ActivityLogEntry
 │       ├── db_config.py          # Encrypted key/value config store
 │       ├── db_inbox_mappings.py  # Inbox mapping CRUD
 │       ├── db_thread_store.py    # Thread mapping store
-│       ├── db_activity_log.py    # Activity log store
-│       ├── slack_client.py       # Slack API wrapper
-│       ├── chatwoot_client.py    # Chatwoot API wrapper
+│       ├── db_activity_log.py    # Activity log store (capped at 10,000 rows)
+│       ├── slack_client.py       # Slack API wrapper (reads token from DB)
+│       ├── chatwoot_client.py    # Chatwoot API wrapper (reads credentials from DB)
 │       ├── routes/
-│       │   ├── ui.py             # All page routes (setup, login, main, config, inbox detail)
-│       │   ├── api.py            # Internal AJAX API routes (/api/*)
-│       │   ├── chatwoot.py       # Chatwoot webhook handler
-│       │   └── slack.py          # Slack Events API handler
-│       ├── templates/            # Jinja2 HTML templates
-│       │   ├── base.html
-│       │   ├── setup.html        # First-run setup wizard
-│       │   ├── login.html
-│       │   ├── index.html        # Main page
-│       │   ├── config.html       # Settings/credentials page
-│       │   ├── inbox_detail.html # Per-inbox activity + threads
-│       │   └── 404.html
-│       └── static/               # CSS/JS assets
+│       │   ├── ui.py             # Page routes: setup, login, logout, main, config, inbox detail
+│       │   ├── api.py            # AJAX API routes (/api/*) — session auth required
+│       │   ├── chatwoot.py       # Chatwoot webhook handler (/webhook/chatwoot)
+│       │   └── slack.py          # Slack Events API handler (/slack/events)
+│       └── templates/
+│           ├── base.html         # Shared layout, nav, CSS, alert auto-dismiss
+│           ├── setup.html        # First-run setup wizard
+│           ├── login.html        # Login page
+│           ├── index.html        # Main page — unified inbox/mapping table + activity log
+│           ├── config.html       # Settings: Chatwoot, Slack, Security, Password (separate forms)
+│           ├── inbox_detail.html # Per-inbox thread mappings + activity log
+│           └── 404.html          # Custom not-found page
+├── screenshots/                  # Drop PNGs here for README screenshots
 ├── data/                         # Runtime data (auto-created, gitignored)
 │   └── slackwoot.db              # SQLite database (default)
 ├── pyproject.toml
@@ -75,7 +101,7 @@ slackwoot/
 
 ```bash
 # 1. Clone
-git clone https://github.com/CodeBleu/slackwoot.git
+git clone https://github.com/your-org/slackwoot.git
 cd slackwoot
 
 # 2. Generate a secret key
@@ -92,11 +118,12 @@ docker compose up -d
 ### Local development
 
 ```bash
-git clone https://github.com/CodeBleu/slackwoot.git
+git clone https://github.com/your-org/slackwoot.git
 cd slackwoot
 
 python -m venv .venv
 source .venv/bin/activate
+pip install -e ".[dev]"
 
 export SECRET_KEY=$(openssl rand -hex 32)
 
@@ -108,7 +135,7 @@ make run
 
 ## ⚙️ First-Run Setup
 
-On a fresh deployment the app detects that no configuration exists and redirects to `/setup`.
+On a fresh deployment the app detects no configuration exists and redirects to `/setup`.
 
 The setup wizard collects:
 - Chatwoot URL, API token, Account ID
@@ -117,7 +144,7 @@ The setup wizard collects:
 
 All sensitive values are **encrypted at rest** using `SECRET_KEY` before being written to the database. After setup completes you are automatically logged in and redirected to the main page.
 
-Subsequent credential changes are made at `/config`.
+Subsequent changes are made at `/config`.
 
 ---
 
@@ -129,7 +156,7 @@ Only three env vars are needed at deploy time. Everything else is configured thr
 |---|---|---|
 | `SECRET_KEY` | ✅ Yes | Encrypts all sensitive DB values. Generate with `openssl rand -hex 32`. **Never change after setup.** |
 | `DATABASE_URL` | No | SQLAlchemy async URL. Default: `sqlite+aiosqlite:///data/slackwoot.db` |
-| `LOG_LEVEL` | No | `INFO` (default), `DEBUG`, `WARNING` |
+| `LOG_LEVEL` | No | `INFO` (default), `DEBUG`, `WARNING`, `ERROR` — set in docker-compose env, not the UI |
 
 > ⚠️ If `SECRET_KEY` is lost or changed, stored credentials become unreadable and must be re-entered at `/config`. Back it up in a secrets manager.
 
@@ -146,6 +173,10 @@ docker compose logs -f
 
 # Rebuild after code changes
 docker compose up -d --build
+
+# Temporarily enable debug logging without changing code
+# Edit docker-compose.yml: LOG_LEVEL: DEBUG
+docker compose up -d
 ```
 
 The SQLite database is persisted in the `slackwoot_data` Docker volume.
@@ -164,25 +195,27 @@ DATABASE_URL: postgresql+asyncpg://slackwoot:password@postgres:5432/slackwoot
 ### Main page (`/`)
 - **Stat tiles** — live counts of mappings, tracked threads, and activity events
 - **Webhook URLs** — copy/paste into Chatwoot and Slack app settings
-- **Inbox → Channel Mappings** — full CRUD: edit, pause/enable, delete
-- **Browse Chatwoot Inboxes** — fetches your live Chatwoot inboxes; click **+ Map this** to create a mapping inline
-- **Activity Log** — paginated, filterable event log for all inboxes; auto-refreshes every 5 seconds
+- **Unified Inbox Table** — all Chatwoot inboxes in one view; mapped ones show their Slack channel with Edit/Pause/Delete; unmapped ones show a `+ Map` button to configure inline
+- **Activity Log** — paginated, filterable event log; auto-refreshes every 5 seconds
 
 ### Inbox detail (`/inbox/{id}`)
 - Per-inbox view of active thread mappings and activity log
 - Delete individual thread mappings to force new conversations to open a fresh Slack thread
-- Activity log filtered to just that inbox — shows both `message_created` and `slack_reply` events
+- Activity log filtered to that inbox — shows `message_created`, `slack_reply`, and `status_changed` events
 
 ### Config page (`/config`)
-- Update Chatwoot and Slack credentials (leave a field blank to keep the current value)
-- Set webhook IP whitelist, log level
-- Change admin password
-- All secret fields have a show/hide toggle (👁)
+Four independent sections, each with its own Save button — change one thing without touching others:
+- **Chatwoot** — URL, Account ID, API token (leave token blank to keep current)
+- **Slack** — Bot token, Signing secret (leave blank to keep current)
+- **Security** — Webhook IP whitelist for `/webhook/chatwoot`
+- **Password** — Change admin password
+
+All secret fields have a show/hide toggle (👁). Success alerts auto-dismiss after 4 seconds.
 
 ### Pausing a mapping
-Clicking **Pause** on a mapping disables it in both directions:
-- Incoming Chatwoot messages for that inbox are ignored (logged as `ignored`)
-- Slack replies to existing threads for that inbox are dropped (logged as `ignored` with the attempted message text)
+Clicking **Pause** disables the mapping in both directions:
+- Incoming Chatwoot messages for that inbox are logged as `ignored`
+- Slack replies to existing threads for that inbox are dropped and logged as `ignored` with the attempted message text
 
 Click **Enable** to resume.
 
@@ -226,23 +259,27 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 3. Enable events: `message_created`, `conversation_status_changed`
 4. Save
 
-Use **Browse Chatwoot Inboxes** on the main page to find inbox IDs and create mappings without leaving the browser.
-
 ---
 
 ## 🔒 Security
 
 ### Encryption at rest
-All API tokens, signing secrets, and credentials are encrypted in the database using [Fernet](https://cryptography.io/en/latest/fernet/) symmetric encryption. The `SECRET_KEY` env var is the sole key — it never enters the database.
+All API tokens, signing secrets, and credentials are encrypted using [Fernet](https://cryptography.io/en/latest/fernet/) symmetric encryption. `SECRET_KEY` is the sole encryption key — it never enters the database.
 
 ### Admin password
-Stored as a bcrypt hash — never reversible even with the `SECRET_KEY`.
+Stored as a bcrypt hash — never reversible even with `SECRET_KEY`.
 
 ### Session authentication
-All UI pages and `/api/*` routes require a valid signed session cookie. Sessions expire after 8 hours. Login at `/login`, logout at `/logout`.
+`SessionAuthMiddleware` protects **all** routes except `/setup`, `/login`, `/health`, and the webhook endpoints. Sessions expire after 8 hours and use HMAC-signed cookies.
+
+- Browser requests without a session → redirect to `/login`
+- AJAX `/api/*` requests without a session → `401 JSON`
+- `/docs` and `/redoc` are also behind auth — no API surface exposed to unauthenticated users
 
 ### Webhook IP whitelist
-Restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable at `/config` (comma-separated IPs or CIDR ranges).
+Optionally restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable in `/config` → Security. Since Chatwoot does not currently send HMAC signatures on webhooks, the IP whitelist is the primary protection for that endpoint.
+
+`/slack/events` is protected by Slack's HMAC signing secret verification — no IP whitelist needed since Slack sends from a broad, changing range of IPs.
 
 ### Docker
 - Multi-stage build — only runtime dependencies in the final image
@@ -255,9 +292,10 @@ Restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable at `/
 
 ### Chatwoot → Slack
 1. Contact sends message → Chatwoot fires webhook to `/webhook/chatwoot`
-2. SlackWoot checks if the inbox has an active mapping in the DB
-3. First message: rich card posted to Slack, thread `ts` saved to DB
-4. Subsequent messages: posted as Slack thread replies
+2. SlackWoot checks if the inbox has an active mapping
+3. Content is extracted from `processed_message_content` (plain text) — falls back to stripping HTML tags from `content` for compatibility with Chatwoot 4.11+ rich text editor
+4. First message: rich card posted to Slack, thread `ts` saved to DB
+5. Subsequent messages: posted as Slack thread replies
 
 ### Slack → Chatwoot
 1. Team member replies in a Slack thread
@@ -267,21 +305,33 @@ Restrict `/webhook/chatwoot` to your Chatwoot server's IP — configurable at `/
 5. Posts reply as an outgoing agent message in Chatwoot
 
 ### Loop Prevention
-Two layers stop echo loops when SlackWoot posts to Chatwoot:
+Two layers stop echo loops:
 1. Chatwoot sets `sender_type: "api"` on API-created messages — checked first
-2. SlackWoot registers each posted message ID and ignores webhooks with that ID
+2. SlackWoot tracks each posted message ID and ignores webhooks with that ID
 
 ---
 
 ## 🗄️ Database
 
-SQLAlchemy async with SQLite (default) or PostgreSQL. Tables are created automatically on first startup — no migration steps required.
+SQLAlchemy async with SQLite (default) or PostgreSQL. Tables are created automatically on startup — no migration steps required.
 
-**Tables:**
-- `app_config` — encrypted key/value settings
-- `inbox_mappings` — Chatwoot inbox → Slack channel mappings (with active flag)
-- `thread_mappings` — active Chatwoot conversation ↔ Slack thread (with inbox_id)
-- `activity_log` — webhook event history (capped at 10,000 rows, auto-pruned)
+| Table | Purpose |
+|---|---|
+| `app_config` | Encrypted key/value settings |
+| `inbox_mappings` | Chatwoot inbox → Slack channel mappings (with active flag) |
+| `thread_mappings` | Chatwoot conversation ↔ Slack thread (with inbox_id) |
+| `activity_log` | Webhook event history — auto-pruned at 10,000 rows |
+
+---
+
+## 🧪 Tested On
+
+| Component | Version | Status |
+|---|---|---|
+| Chatwoot | 4.8.0 | ✅ Tested |
+| Chatwoot | 4.11.1 | ✅ Tested — HTML stripping handles rich text editor output |
+
+> If you test on a version not listed here, please open an issue or PR to update this table.
 
 ---
 

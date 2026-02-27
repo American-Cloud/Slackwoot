@@ -52,79 +52,29 @@
   </div>
 </div>
 
-<!-- Inbox Mappings table -->
+<!-- Unified Inbox / Mapping table -->
 <div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-    <h2 style="margin:0;">📋 Inbox → Channel Mappings</h2>
-    <button class="btn btn-muted btn-sm" onclick="toggleInboxBrowser()">🗂 Browse Chatwoot Inboxes</button>
+    <h2 style="margin:0;">📋 Inboxes &amp; Channel Mappings</h2>
+    <button class="btn btn-muted btn-sm" id="refresh-inboxes-btn" onclick="loadUnifiedTable()">↻ Refresh</button>
   </div>
-
   <div style="overflow-x:auto;">
-    <table>
+    <table id="unified-table">
       <thead>
         <tr>
           <th>Inbox ID</th>
           <th>Inbox Name</th>
+          <th>Type</th>
           <th>Slack Channel</th>
           <th>Channel ID</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>
-      <tbody id="mappings-body">
-        {% if mappings %}
-          {% for m in mappings %}
-          <tr id="mapping-row-{{ m.id }}"
-              data-id="{{ m.id }}"
-              data-inbox-name="{{ m.inbox_name|e }}"
-              data-slack-channel="{{ m.slack_channel|e }}"
-              data-slack-channel-id="{{ m.slack_channel_id|e }}">
-            <td><code>{{ m.chatwoot_inbox_id }}</code></td>
-            <td>
-              <a href="/inbox/{{ m.chatwoot_inbox_id }}" style="color:var(--accent2);text-decoration:none;font-weight:500;">
-                {{ m.inbox_name }}
-              </a>
-            </td>
-            <td><span class="badge badge-purple">{{ m.slack_channel }}</span></td>
-            <td><code>{{ m.slack_channel_id }}</code></td>
-            <td>
-              {% if m.active %}
-                <span class="badge badge-green"><span class="dot" style="width:5px;height:5px;margin-right:3px;"></span>Active</span>
-              {% else %}
-                <span class="badge badge-muted">Inactive</span>
-              {% endif %}
-            </td>
-            <td>
-              <div style="display:flex;gap:0.4rem;">
-                <button class="btn btn-muted btn-sm" onclick="openEditFromRow(this)">✏ Edit</button>
-                <button class="btn btn-yellow btn-sm" onclick="toggleMapping({{ m.id }}, {{ 'true' if m.active else 'false' }})">
-                  {{ '⏸ Pause' if m.active else '▶ Enable' }}
-                </button>
-                <button class="btn btn-red btn-sm" onclick="deleteMapping({{ m.id }}, '{{ m.inbox_name|e }}')">🗑</button>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        {% else %}
-          <tr id="mappings-empty">
-            <td colspan="6" style="text-align:center;color:var(--muted);padding:2.5rem;">
-              No mappings yet. Use <strong>Browse Chatwoot Inboxes</strong> above to add one.
-            </td>
-          </tr>
-        {% endif %}
+      <tbody id="unified-body">
+        <tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem;">Loading…</td></tr>
       </tbody>
     </table>
-  </div>
-</div>
-
-<!-- Chatwoot Inbox Browser (hidden until loaded) -->
-<div id="inbox-browser-card" class="card" style="display:none;">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-    <h2 style="margin:0;">🗂 Chatwoot Inboxes</h2>
-    <button class="btn btn-muted btn-sm" onclick="toggleInboxBrowser()">✕ Close</button>
-  </div>
-  <div id="inbox-browser-content">
-    <p style="color:var(--muted);">Loading…</p>
   </div>
 </div>
 
@@ -173,32 +123,7 @@
   </div>
 </div>
 
-<!-- ── Edit Mapping Modal ────────────────────────────────────────────────── -->
-<div class="modal-overlay" id="edit-modal">
-  <div class="modal">
-    <h3>✏ Edit Inbox Mapping</h3>
-    <input type="hidden" id="edit-mapping-id"/>
-    <div class="form-group">
-      <label>Inbox Name</label>
-      <input type="text" id="edit-inbox-name"/>
-    </div>
-    <div class="form-group">
-      <label>Slack Channel</label>
-      <input type="text" id="edit-slack-channel" placeholder="#channel-name"/>
-    </div>
-    <div class="form-group">
-      <label>Slack Channel ID</label>
-      <input type="text" id="edit-slack-channel-id" placeholder="C0XXXXXXXXX"/>
-    </div>
-    <div id="edit-error" class="alert alert-error" style="display:none;"></div>
-    <div class="modal-footer">
-      <button class="btn btn-muted" onclick="closeModal('edit-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="submitEditMapping()">Save Changes</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── Add Mapping Modal (opened from inbox browser) ────────────────────── -->
+<!-- ── Map Inbox Modal ──────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="add-modal">
   <div class="modal">
     <h3>➕ Map Inbox to Slack</h3>
@@ -215,7 +140,7 @@
     </div>
     <div class="form-group">
       <label>Slack Channel ID</label>
-      <input type="text" id="add-slack-channel-id" placeholder="C0AHGAWTHFA"/>
+      <input type="text" id="add-slack-channel-id" placeholder="C0XXXXXXXXX"/>
       <p class="form-hint">Right-click channel in Slack → View channel details → scroll to bottom.</p>
     </div>
     <div id="add-error" class="alert alert-error" style="display:none;"></div>
@@ -226,13 +151,40 @@
   </div>
 </div>
 
+<!-- ── Edit Mapping Modal ───────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal">
+    <h3>✏ Edit Inbox Mapping</h3>
+    <div class="form-group">
+      <label>Inbox</label>
+      <input type="text" id="edit-inbox-display" readonly
+             style="background:var(--surface2);color:var(--muted);cursor:default;"/>
+    </div>
+    <input type="hidden" id="edit-mapping-id"/>
+    <div class="form-group">
+      <label>Slack Channel</label>
+      <input type="text" id="edit-slack-channel" placeholder="#channel-name"/>
+    </div>
+    <div class="form-group">
+      <label>Slack Channel ID</label>
+      <input type="text" id="edit-slack-channel-id" placeholder="C0XXXXXXXXX"/>
+    </div>
+    <div id="edit-error" class="alert alert-error" style="display:none;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-muted" onclick="closeModal('edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditMapping()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const CHATWOOT_URL = {{ chatwoot_url|tojson }};
 const ACCOUNT_ID   = {{ account_id|tojson }};
 let logPage = 1;
 const LOG_PAGE_SIZE = 50;
-let _cachedInboxes = null;
-let _inboxBrowserOpen = false;
+
+// Holds merged data: { [inboxId]: { inbox, mapping|null } }
+let _unifiedData = {};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function apiFetch(url, opts={}) {
@@ -244,7 +196,6 @@ function showErr(id, msg) { const el = document.getElementById(id); el.textConte
 function hideErr(id) { document.getElementById(id).style.display = 'none'; }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
-
 document.querySelectorAll('.modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
 });
@@ -258,6 +209,168 @@ async function refreshStats() {
     document.getElementById('stat-threads').textContent  = d.threads;
     document.getElementById('stat-logs').textContent     = d.logs;
   } catch(e) {}
+}
+
+// ── Unified inbox+mapping table ───────────────────────────────────────────────
+async function loadUnifiedTable() {
+  const tbody = document.getElementById('unified-body');
+  tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem;">Loading…</td></tr>';
+
+  let inboxes = [], mappings = [];
+  try {
+    [inboxes, mappings] = await Promise.all([
+      apiFetch('/api/inboxes').then(r => r.json()),
+      apiFetch('/api/mappings').then(r => r.json()),
+    ]);
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--red);text-align:center;padding:2rem;">Failed to load. Check Chatwoot credentials in <a href="/config" style="color:var(--accent2);">/config</a>.</td></tr>';
+    return;
+  }
+
+  // Build lookup: inbox_id → mapping
+  const mappingByInboxId = {};
+  mappings.forEach(m => { mappingByInboxId[m.chatwoot_inbox_id] = m; });
+
+  // Store for use by modal handlers
+  _unifiedData = {};
+  inboxes.forEach(i => {
+    _unifiedData[i.id] = { inbox: i, mapping: mappingByInboxId[i.id] || null };
+  });
+
+  if (!inboxes.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--muted);text-align:center;padding:2rem;">No inboxes found in Chatwoot.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = inboxes.map(inbox => {
+    const m = mappingByInboxId[inbox.id];
+    const typeBadge = `<span class="badge badge-blue">${inbox.channel_type}</span>`;
+
+    if (m) {
+      // Mapped inbox — show channel info + actions
+      const statusBadge = m.active
+        ? '<span class="badge badge-green"><span class="dot" style="width:5px;height:5px;margin-right:3px;"></span>Active</span>'
+        : '<span class="badge badge-muted">Inactive</span>';
+      const toggleLabel = m.active ? '⏸ Pause' : '▶ Enable';
+      const toggleClass = m.active ? 'btn-yellow' : 'btn-green';
+      return `<tr>
+        <td><code>${inbox.id}</code></td>
+        <td>
+          <a href="/inbox/${inbox.id}" style="color:var(--accent2);text-decoration:none;font-weight:500;">${inbox.name}</a>
+        </td>
+        <td>${typeBadge}</td>
+        <td><span class="badge badge-purple">${m.slack_channel}</span></td>
+        <td><code>${m.slack_channel_id}</code></td>
+        <td>${statusBadge}</td>
+        <td>
+          <div style="display:flex;gap:0.4rem;">
+            <button class="btn btn-muted btn-sm" onclick="openEditModal(${inbox.id})">✏ Edit</button>
+            <button class="btn ${toggleClass} btn-sm" onclick="toggleMapping(${m.id}, ${m.active})">${toggleLabel}</button>
+            <button class="btn btn-red btn-sm" onclick="deleteMapping(${m.id}, '${inbox.name.replace(/'/g,"\\'")}')">🗑</button>
+          </div>
+        </td>
+      </tr>`;
+    } else {
+      // Unmapped inbox — show map button
+      return `<tr style="opacity:0.7;">
+        <td><code>${inbox.id}</code></td>
+        <td>${inbox.name}</td>
+        <td>${typeBadge}</td>
+        <td colspan="3" style="color:var(--muted);font-size:0.82rem;">Not mapped</td>
+        <td>
+          <button class="btn btn-muted btn-sm" onclick="openAddModal(${inbox.id}, '${inbox.name.replace(/'/g,"\\'")}')">+ Map</button>
+        </td>
+      </tr>`;
+    }
+  }).join('');
+
+  refreshStats();
+}
+
+// ── Add Mapping Modal ─────────────────────────────────────────────────────────
+function openAddModal(inboxId, inboxName) {
+  document.getElementById('add-inbox-id').value          = inboxId;
+  document.getElementById('add-inbox-name-hidden').value = inboxName;
+  document.getElementById('add-inbox-display').value     = `${inboxId} · ${inboxName}`;
+  document.getElementById('add-slack-channel').value     = '';
+  document.getElementById('add-slack-channel-id').value  = '';
+  hideErr('add-error');
+  openModal('add-modal');
+  // Focus first input
+  setTimeout(() => document.getElementById('add-slack-channel').focus(), 100);
+}
+
+async function submitAddMapping() {
+  hideErr('add-error');
+  const body = {
+    chatwoot_inbox_id: parseInt(document.getElementById('add-inbox-id').value),
+    inbox_name:        document.getElementById('add-inbox-name-hidden').value,
+    slack_channel:     document.getElementById('add-slack-channel').value.trim(),
+    slack_channel_id:  document.getElementById('add-slack-channel-id').value.trim(),
+  };
+  if (!body.slack_channel || !body.slack_channel_id) {
+    return showErr('add-error', 'Slack channel and channel ID are required.');
+  }
+  try {
+    const r = await apiFetch('/api/mappings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const d = await r.json();
+      return showErr('add-error', d.detail || 'Failed to create mapping.');
+    }
+    closeModal('add-modal');
+    loadUnifiedTable();
+  } catch(e) { showErr('add-error', 'Request failed. Try again.'); }
+}
+
+// ── Edit Mapping Modal ────────────────────────────────────────────────────────
+function openEditModal(inboxId) {
+  const { inbox, mapping: m } = _unifiedData[inboxId];
+  if (!m) return;
+  document.getElementById('edit-mapping-id').value       = m.id;
+  document.getElementById('edit-inbox-display').value    = `${inbox.id} · ${inbox.name}`;
+  document.getElementById('edit-slack-channel').value    = m.slack_channel;
+  document.getElementById('edit-slack-channel-id').value = m.slack_channel_id;
+  hideErr('edit-error');
+  openModal('edit-modal');
+  setTimeout(() => document.getElementById('edit-slack-channel').focus(), 100);
+}
+
+async function submitEditMapping() {
+  hideErr('edit-error');
+  const id = document.getElementById('edit-mapping-id').value;
+  const body = {
+    slack_channel:    document.getElementById('edit-slack-channel').value.trim(),
+    slack_channel_id: document.getElementById('edit-slack-channel-id').value.trim(),
+  };
+  if (!body.slack_channel || !body.slack_channel_id) {
+    return showErr('edit-error', 'Both fields are required.');
+  }
+  try {
+    const r = await apiFetch(`/api/mappings/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) return showErr('edit-error', 'Failed to update mapping.');
+    closeModal('edit-modal');
+    loadUnifiedTable();
+  } catch(e) { showErr('edit-error', 'Request failed. Try again.'); }
+}
+
+// ── Toggle / Delete ───────────────────────────────────────────────────────────
+async function toggleMapping(id, currentlyActive) {
+  if (!confirm(`${currentlyActive ? 'Pause' : 'Enable'} this mapping?`)) return;
+  await apiFetch(`/api/mappings/${id}/toggle`, { method: 'PATCH' });
+  loadUnifiedTable();
+}
+async function deleteMapping(id, name) {
+  if (!confirm(`Delete mapping for "${name}"? This cannot be undone.`)) return;
+  await apiFetch(`/api/mappings/${id}`, { method: 'DELETE' });
+  loadUnifiedTable();
 }
 
 // ── Activity log ──────────────────────────────────────────────────────────────
@@ -302,165 +415,19 @@ async function clearLogs() {
   logPage = 1; refreshLogs(); refreshStats();
 }
 
-// ── Inbox Browser ─────────────────────────────────────────────────────────────
-async function fetchInboxes() {
-  if (_cachedInboxes) return _cachedInboxes;
-  const r = await apiFetch('/api/inboxes');
-  _cachedInboxes = await r.json();
-  return _cachedInboxes;
-}
-
-async function renderInboxBrowser() {
-  const content = document.getElementById('inbox-browser-content');
-  content.innerHTML = '<p style="color:var(--muted);">Loading…</p>';
-  try {
-    const inboxes = await fetchInboxes();
-    if (!inboxes.length) {
-      content.innerHTML = '<p style="color:var(--muted);">No inboxes found in Chatwoot.</p>';
-      return;
-    }
-    content.innerHTML = `<table>
-      <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Mapped?</th></tr></thead>
-      <tbody>
-        ${inboxes.map(i => `<tr>
-          <td><code>${i.id}</code></td>
-          <td>${i.name}</td>
-          <td><span class="badge badge-blue">${i.channel_type}</span></td>
-          <td>${i.mapped
-            ? '<span class="badge badge-green">✓ Mapped</span>'
-            : `<button class="btn btn-muted btn-sm map-this-btn"
-                 data-id="${i.id}"
-                 data-name="${i.name.replace(/"/g, '&quot;').replace(/'/g, '&#39;')}">+ Map this</button>`
-          }</td>
-        </tr>`).join('')}
-      </tbody></table>`;
-  } catch(e) {
-    content.innerHTML = '<p style="color:var(--red);">Error fetching inboxes. Check your Chatwoot credentials in <a href="/config" style="color:var(--accent2);">/config</a>.</p>';
-  }
-}
-
-// Delegated listener — handles "Map this" buttons injected into innerHTML.
-// Inline onclick in dynamically-built HTML is brittle due to quote escaping;
-// this approach is immune to special characters in inbox names.
-document.getElementById('inbox-browser-content').addEventListener('click', function(e) {
-  const btn = e.target.closest('.map-this-btn');
-  if (!btn) return;
-  openAddModal(parseInt(btn.dataset.id), btn.dataset.name);
-});
-
-async function toggleInboxBrowser() {
-  const card = document.getElementById('inbox-browser-card');
-  _inboxBrowserOpen = !_inboxBrowserOpen;
-  if (_inboxBrowserOpen) {
-    card.style.display = 'block';
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    await renderInboxBrowser();
-  } else {
-    card.style.display = 'none';
-  }
-}
-
-// ── Add Mapping (opened from inbox browser row) ───────────────────────────────
-function openAddModal(inboxId, inboxName) {
-  document.getElementById('add-inbox-id').value       = inboxId;
-  document.getElementById('add-inbox-name-hidden').value = inboxName;
-  document.getElementById('add-inbox-display').value  = `${inboxId} · ${inboxName}`;
-  document.getElementById('add-slack-channel').value  = '';
-  document.getElementById('add-slack-channel-id').value = '';
-  hideErr('add-error');
-  openModal('add-modal');
-}
-
-async function submitAddMapping() {
-  hideErr('add-error');
-  const body = {
-    chatwoot_inbox_id: parseInt(document.getElementById('add-inbox-id').value),
-    inbox_name:        document.getElementById('add-inbox-name-hidden').value,
-    slack_channel:     document.getElementById('add-slack-channel').value.trim(),
-    slack_channel_id:  document.getElementById('add-slack-channel-id').value.trim(),
-  };
-  if (!body.chatwoot_inbox_id || !body.slack_channel || !body.slack_channel_id) {
-    return showErr('add-error', 'Slack channel and channel ID are required.');
-  }
-  try {
-    const r = await apiFetch('/api/mappings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
-      const d = await r.json();
-      return showErr('add-error', d.detail || 'Failed to create mapping.');
-    }
-    closeModal('add-modal');
-    _cachedInboxes = null;
-    window.location.reload();
-  } catch(e) { showErr('add-error', 'Request failed. Try again.'); }
-}
-
-// ── Edit Mapping ──────────────────────────────────────────────────────────────
-// Read the mapping JSON from the row's data attribute to avoid inline onclick
-// escaping issues with special characters in names/channels.
-function openEditFromRow(btn) {
-  const row = btn.closest('tr');
-  // Read individual data attributes — avoids JSON quote-escaping issues
-  // that occur when embedding tojson inside an HTML attribute value.
-  document.getElementById('edit-mapping-id').value       = row.dataset.id;
-  document.getElementById('edit-inbox-name').value       = row.dataset.inboxName;
-  document.getElementById('edit-slack-channel').value    = row.dataset.slackChannel;
-  document.getElementById('edit-slack-channel-id').value = row.dataset.slackChannelId;
-  hideErr('edit-error');
-  openModal('edit-modal');
-}
-
-async function submitEditMapping() {
-  hideErr('edit-error');
-  const id = document.getElementById('edit-mapping-id').value;
-  const body = {
-    inbox_name:       document.getElementById('edit-inbox-name').value.trim(),
-    slack_channel:    document.getElementById('edit-slack-channel').value.trim(),
-    slack_channel_id: document.getElementById('edit-slack-channel-id').value.trim(),
-  };
-  if (!body.inbox_name || !body.slack_channel || !body.slack_channel_id) {
-    return showErr('edit-error', 'All fields are required.');
-  }
-  try {
-    const r = await apiFetch(`/api/mappings/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) return showErr('edit-error', 'Failed to update mapping.');
-    closeModal('edit-modal');
-    window.location.reload();
-  } catch(e) { showErr('edit-error', 'Request failed. Try again.'); }
-}
-
-// ── Toggle / Delete ───────────────────────────────────────────────────────────
-async function toggleMapping(id, currentlyActive) {
-  const word = currentlyActive ? 'Pause' : 'Enable';
-  if (!confirm(`${word} this mapping?`)) return;
-  await apiFetch(`/api/mappings/${id}/toggle`, { method: 'PATCH' });
-  window.location.reload();
-}
-async function deleteMapping(id, name) {
-  if (!confirm(`Delete mapping for "${name}"? This cannot be undone.`)) return;
-  await apiFetch(`/api/mappings/${id}`, { method: 'DELETE' });
-  _cachedInboxes = null;
-  window.location.reload();
-}
-
 // ── Auto-refresh ──────────────────────────────────────────────────────────────
 let autoRefreshTimer = null;
 function startAutoRefresh() {
   autoRefreshTimer = setInterval(() => {
-    if (!document.hidden) { refreshLogs(); refreshStats(); }
+    if (!document.hidden) refreshLogs();
   }, 5000);
 }
 document.getElementById('auto-refresh').addEventListener('change', function() {
   if (this.checked) startAutoRefresh(); else clearInterval(autoRefreshTimer);
 });
 
+// Initial load
+loadUnifiedTable();
 refreshLogs();
 startAutoRefresh();
 </script>

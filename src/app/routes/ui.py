@@ -166,43 +166,70 @@ async def config_page(request: Request, db: AsyncSession = Depends(get_db)):
     })
 
 
-@router.post("/config", response_class=HTMLResponse)
-async def config_submit(
+@router.post("/config/chatwoot", response_class=HTMLResponse)
+async def config_chatwoot(
     request: Request,
     db: AsyncSession = Depends(get_db),
     chatwoot_base_url: str = Form(...),
-    chatwoot_api_token: str = Form(...),
     chatwoot_account_id: str = Form(...),
-    slack_bot_token: str = Form(...),
-    slack_signing_secret: str = Form(...),
-    webhook_allowed_ips: str = Form(default=""),
-    log_level: str = Form(default="INFO"),
-    new_password: str = Form(default=""),
-    new_password_confirm: str = Form(default=""),
+    chatwoot_api_token: str = Form(default=""),
 ):
-    error = None
-    if new_password:
-        if new_password != new_password_confirm:
-            error = "New passwords do not match."
-        elif len(new_password) < 8:
-            error = "Password must be at least 8 characters."
-
-    if error:
-        cfg = await get_all_settings(db)
-        return templates.TemplateResponse("config.html", {"request": request, "cfg": cfg, "error": error, "saved": False})
-
     await set_setting(db, "chatwoot_base_url", chatwoot_base_url.rstrip("/"))
-    await set_setting(db, "chatwoot_api_token", chatwoot_api_token)
     await set_setting(db, "chatwoot_account_id", chatwoot_account_id)
-    await set_setting(db, "slack_bot_token", slack_bot_token)
-    await set_setting(db, "slack_signing_secret", slack_signing_secret)
-    await set_setting(db, "webhook_allowed_ips", webhook_allowed_ips)
-    await set_setting(db, "log_level", log_level)
-    if new_password:
-        await set_setting(db, "admin_password", new_password)
+    if chatwoot_api_token.strip():
+        await set_setting(db, "chatwoot_api_token", chatwoot_api_token)
+    logger.info("Chatwoot settings updated.")
+    return RedirectResponse(url="/config?saved=1#section-chatwoot", status_code=302)
 
-    logger.info("Configuration updated via UI.")
-    return RedirectResponse(url="/config?saved=1", status_code=302)
+
+@router.post("/config/slack", response_class=HTMLResponse)
+async def config_slack(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    slack_bot_token: str = Form(default=""),
+    slack_signing_secret: str = Form(default=""),
+):
+    if slack_bot_token.strip():
+        await set_setting(db, "slack_bot_token", slack_bot_token)
+    if slack_signing_secret.strip():
+        await set_setting(db, "slack_signing_secret", slack_signing_secret)
+    logger.info("Slack settings updated.")
+    return RedirectResponse(url="/config?saved=1#section-slack", status_code=302)
+
+
+@router.post("/config/security", response_class=HTMLResponse)
+async def config_security(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    webhook_allowed_ips: str = Form(default=""),
+):
+    await set_setting(db, "webhook_allowed_ips", webhook_allowed_ips)
+    logger.info("Security settings updated.")
+    return RedirectResponse(url="/config?saved=1#section-security", status_code=302)
+
+
+@router.post("/config/password", response_class=HTMLResponse)
+async def config_password(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    new_password: str = Form(...),
+    new_password_confirm: str = Form(...),
+):
+    if new_password != new_password_confirm:
+        cfg = await get_all_settings(db)
+        return templates.TemplateResponse("config.html", {
+            "request": request, "cfg": cfg,
+            "error": "Passwords do not match.", "saved": False,
+        })
+    if len(new_password) < 8:
+        cfg = await get_all_settings(db)
+        return templates.TemplateResponse("config.html", {
+            "request": request, "cfg": cfg,
+            "error": "Password must be at least 8 characters.", "saved": False,
+        })
+    await set_setting(db, "admin_password", new_password)
+    logger.info("Admin password changed.")
+    return RedirectResponse(url="/config?saved=1#section-password", status_code=302)
 
 
 # ── Inbox detail page ─────────────────────────────────────────────────────────
