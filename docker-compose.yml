@@ -13,8 +13,6 @@
 # For PostgreSQL instead of SQLite, set DATABASE_URL in .env and
 # uncomment the postgres service at the bottom of this file.
 
-version: "3.9"
-
 services:
   slackwoot:
     build: .
