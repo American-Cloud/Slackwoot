@@ -4,6 +4,14 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'entrypoint.sh'
+      - 'run.py'
     tags:
       - "v*"
 
