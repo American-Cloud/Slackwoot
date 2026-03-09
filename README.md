@@ -9,6 +9,26 @@ SlackWoot routes Chatwoot conversations to specific Slack channels based on inbo
 
 ---
 
+## 🤔 Why SlackWoot?
+
+You could wire this up in n8n, Zapier, or Make. Most people who try quickly run into the same wall: getting a message *into* Slack is easy — getting a reply *back* into the right Chatwoot conversation, threaded correctly, without echo loops, is the part that requires real state management. General-purpose automation tools don't know enough about Chatwoot's data model to handle it cleanly without a lot of custom logic on your end.
+
+SlackWoot is purpose-built for this one job.
+
+**No per-message cost.** n8n Cloud, Zapier, and Make all charge by operation volume. A busy support team burns through a free tier fast. SlackWoot is self-hosted with no usage fees — run it alongside your existing Chatwoot instance.
+
+**Slack threads are first-class.** Each Chatwoot conversation maps to exactly one Slack thread, automatically. Replies in that thread route back to the right conversation without any workflow configuration or conversation ID lookups.
+
+**Your data stays in your infrastructure.** Chatwoot credentials, Slack tokens, and conversation data never pass through a third-party automation platform. Everything is encrypted at rest in your own database.
+
+**It knows when to stay quiet.** Bot message filtering, loop prevention, per-inbox pause, and inactive mapping detection are all built in. These edge cases require custom logic in a general-purpose tool — here they're handled by default.
+
+**Zero ongoing maintenance.** No workflow canvas to keep updated, no credentials to re-authenticate every 30 days, no nodes to fix when an API changes. Configure it once through the web UI and it runs.
+
+The honest take: if your entire use case is Chatwoot ↔ Slack, SlackWoot does it better out of the box. If you need Chatwoot connected to ten other services, use n8n.
+
+---
+
 ## ✨ Features
 
 - 📥 **Per-inbox routing** — map each Chatwoot inbox to its own Slack channel
@@ -28,24 +48,21 @@ SlackWoot routes Chatwoot conversations to specific Slack channels based on inbo
 
 ## 📸 Screenshots
 
-<details>
-<summary>Click to expand screenshots</summary>
-
-### Main Page
 ![Main Page](screenshots/main.png)
+
+<details>
+<summary>More screenshots</summary>
 
 ### Inbox Detail
 ![Inbox Detail](screenshots/inbox_detail.png)
 
-### First-Run Setup
-![Setup Wizard](screenshots/setup.png)
-
 ### Config Page
 ![Config](screenshots/config.png)
 
-</details>
+### First-Run Setup
+![Setup Wizard](screenshots/setup.png)
 
-> Screenshots are stored in the [`screenshots/`](screenshots/) directory. To add your own, drop `.png` files there and update the paths above.
+</details>
 
 ---
 
@@ -101,7 +118,7 @@ slackwoot/
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/slackwoot.git
+git clone https://github.com/CodeBleu/slackwoot.git
 cd slackwoot
 
 # 2. Generate a secret key
@@ -118,7 +135,7 @@ docker compose up -d
 ### Local development
 
 ```bash
-git clone https://github.com/your-org/slackwoot.git
+git clone https://github.com/CodeBleu/slackwoot.git
 cd slackwoot
 
 python -m venv .venv
