@@ -16,7 +16,7 @@
 services:
   slackwoot:
     build: .
-    image: codebleu/slackwoot:latest
+    image: ghcr.io/american-cloud/slackwoot:latest
     container_name: slackwoot
     ports:
       - "${PORT:-8000}:8000"
