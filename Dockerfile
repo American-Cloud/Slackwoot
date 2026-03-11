@@ -1,13 +1,20 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
+# git is required by setuptools-scm to read the version from git tags
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 
 COPY requirements.txt pyproject.toml ./
 COPY src/ ./src/
 
+# Copy .git so setuptools-scm can determine the version from tags
+COPY .git ./.git
+
 # Install all dependencies including the slackwoot package
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt \
+RUN pip install --no-cache-dir --prefix=/install setuptools-scm \
+ && pip install --no-cache-dir --prefix=/install -r requirements.txt \
  && pip install --no-cache-dir --prefix=/install .
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────

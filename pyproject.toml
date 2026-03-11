@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=68", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "slackwoot"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Chatwoot <-> Slack bridge"
 requires-python = ">=3.11"
 dependencies = [
@@ -28,3 +28,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "app" = ["templates/**/*", "static/**/*"]
+
+[tool.setuptools_scm]
+# Write version to a file so it works without git (e.g. in Docker builds from tarballs)
+write_to = "src/app/_version.py"
+# Fallback if no git tags exist (e.g. fresh clone with no tags)
+fallback_version = "0.0.0-dev"

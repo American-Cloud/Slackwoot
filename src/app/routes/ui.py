@@ -14,6 +14,7 @@ UI page routes for SlackWoot.
 
 import os
 import logging
+from app.main import __version__
 
 from fastapi import APIRouter, Request, Depends, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -150,7 +151,7 @@ async def main_page(request: Request, db: AsyncSession = Depends(get_db)):
         "account_id": account_id,
         "chatwoot_webhook_url": chatwoot_webhook_url,
         "slack_events_url": slack_events_url,
-        "version": "0.1.0",
+        "version": __version__,
     })
 
 

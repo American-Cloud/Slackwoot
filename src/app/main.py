@@ -17,6 +17,12 @@ so the last one added runs first):
 import logging
 import os
 from contextlib import asynccontextmanager
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("slackwoot")
+except PackageNotFoundError:
+    __version__ = "dev"
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
@@ -57,7 +63,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="SlackWoot",
     description="Chatwoot <-> Slack Bridge",
-    version="0.1.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url=None,    # Disable default Swagger (we serve a custom read-only version)
     redoc_url=None,   # Disable default ReDoc (we serve it manually)
@@ -123,4 +129,4 @@ async def redoc_docs():
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": __version__}
