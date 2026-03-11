@@ -4,7 +4,7 @@ FROM python:3.12-slim AS builder
 # Version is passed in from CI (--build-arg VERSION=0.1.2)
 # SETUPTOOLS_SCM_PRETEND_VERSION tells setuptools-scm to use this value
 # instead of trying to read from git, which is unavailable in Docker builds.
-ARG VERSION=dev
+ARG VERSION=0.0.0.dev0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 WORKDIR /build
