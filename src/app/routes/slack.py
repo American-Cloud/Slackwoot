@@ -182,7 +182,7 @@ async def handle_file_shared(event: dict, db) -> None:
         if result:
             logger.info(f"Forwarded file {filename} from {user_name} to Chatwoot conv {conversation_id}")
             await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
-                f"[CID-{conversation_id}] {user_name} → Chatwoot attachment: {filename}", status="ok")
+                f"[CID-{conversation_id}] {user_name} → Chatwoot attachment: {filename}" + (f' | "{caption}"' if caption else ""), status="ok")
         else:
             await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
                 f"[CID-{conversation_id}] Failed to upload attachment to Chatwoot: {filename}", status="error")
@@ -330,7 +330,7 @@ async def slack_events(request: Request, db: AsyncSession = Depends(get_db)):
             )
             if result:
                 await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
-                    f"[CID-{conversation_id}] {user_name} → Chatwoot attachment: {filename}", status="ok")
+                    f"[CID-{conversation_id}] {user_name} → Chatwoot attachment: {filename}" + (f' | "{text}"' if text else ""), status="ok")
             else:
                 await db_activity_log.add(db, inbox_id, inbox_name, "slack_reply",
                     f"[CID-{conversation_id}] Failed to upload attachment to Chatwoot: {filename}", status="error")
