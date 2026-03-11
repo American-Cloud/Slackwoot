@@ -1,16 +1,16 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
-# git is required by setuptools-scm to read the version from git tags
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+# Version is passed in from CI (--build-arg VERSION=0.1.2)
+# SETUPTOOLS_SCM_PRETEND_VERSION tells setuptools-scm to use this value
+# instead of trying to read from git, which is unavailable in Docker builds.
+ARG VERSION=dev
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 
 WORKDIR /build
 
 COPY requirements.txt pyproject.toml ./
 COPY src/ ./src/
-
-# Copy .git so setuptools-scm can determine the version from tags
-COPY .git ./.git
 
 # Install all dependencies including the slackwoot package
 RUN pip install --no-cache-dir --prefix=/install setuptools-scm \
@@ -22,6 +22,8 @@ FROM python:3.12-slim
 
 # Create a non-root user — never run as root in production
 RUN addgroup --system slackwoot && adduser --system --ingroup slackwoot slackwoot
+
+RUN apt-get update && apt-get install -y sqlite3 postgresql-client && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -43,7 +45,6 @@ RUN mkdir -p /app/data \
 # Tell Python where to find the 'app' package (src/ layout)
 ENV PYTHONPATH=/app/src
 
-RUN apt-get update && apt-get install -y sqlite3 postgresql-client && apt-get clean && rm -rf /var/lib/apt/lists/*
 USER slackwoot
 
 EXPOSE 8000
