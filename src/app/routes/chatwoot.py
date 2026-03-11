@@ -52,23 +52,87 @@ async def verify_signature(body: bytes, signature: str, db: AsyncSession) -> boo
     return hmac.compare_digest(expected, signature)
 
 
+# Slack renders these as inline image previews when uploaded via files.uploadV2.
+# SVG is intentionally excluded — Slack accepts the upload but won't preview it.
+SLACK_PREVIEWABLE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "webp", "bmp"}
+
+
+def _is_previewable_image(att: dict) -> bool:
+    """Return True if this attachment will render as an inline image preview in Slack."""
+    # Chatwoot sends file_type="image" for all image attachments — check this first
+    file_type = att.get("file_type", "").lower()
+    if file_type == "image":
+        return True
+    # Strip mime prefix if present (e.g. "image/jpeg" -> "jpeg")
+    if "/" in file_type:
+        file_type = file_type.split("/")[-1]
+    if file_type in SLACK_PREVIEWABLE_EXTENSIONS:
+        return True
+    # Fall back to extension from file_name or extract from data_url
+    name = att.get("file_name") or att.get("data_url", "").split("?")[0].split("/")[-1]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return ext in SLACK_PREVIEWABLE_EXTENSIONS
+
+
 def format_attachments_text(attachments: list) -> str:
-    """Build a human-readable string describing file attachments."""
+    """Build link text for non-image attachments. Previewable images are handled by post_attachments_to_thread."""
     if not attachments:
         return ""
     parts = []
     for att in attachments:
+        if _is_previewable_image(att):
+            continue  # uploaded directly to Slack — skip text fallback
         name = att.get("file_name", "attachment")
-        file_type = att.get("file_type", "")
+        file_type = att.get("file_type", "").lower()
         size = att.get("file_size", 0)
+        url = att.get("data_url", "")
         size_str = f"{round(size/1024, 1)} KB" if size else ""
-        label = f"📎 {name}"
+        label = name
         if file_type:
             label += f" [{file_type}]"
         if size_str:
             label += f" ({size_str})"
-        parts.append(label)
+        if url:
+            parts.append(f"📎 <{url}|{label}>")
+        else:
+            parts.append(f"📎 {label}")
     return "\n".join(parts)
+
+
+async def post_attachments_to_thread(
+    attachments: list,
+    channel_id: str,
+    thread_ts: str,
+    db,
+) -> None:
+    """Upload previewable image attachments directly to a Slack thread for inline preview."""
+    for att in attachments:
+        if not _is_previewable_image(att):
+            continue
+        url = att.get("data_url", "")
+        name = att.get("file_name") or url.split("?")[0].split("/")[-1] or "image.png"
+        file_type = att.get("file_type", "")
+        if not url:
+            continue
+        success = await slack_client.upload_file_to_thread(
+            channel_id=channel_id,
+            thread_ts=thread_ts,
+            file_url=url,
+            filename=name,
+            file_type=file_type,
+            db=db,
+        )
+        if not success:
+            # Fall back to posting a link if upload fails
+            size = att.get("file_size", 0)
+            size_str = f"{round(size/1024, 1)} KB" if size else ""
+            label = name + (f" ({size_str})" if size_str else "")
+            await slack_client.post_message(
+                channel_id=channel_id,
+                text=f"📎 <{url}|{label}>",
+                thread_ts=thread_ts,
+                db=db,
+            )
 
 
 def _strip_html(text: str) -> str:
@@ -249,6 +313,7 @@ async def handle_message(payload: dict, db: AsyncSession):
         icon_emoji = ":headphones:"
 
     # Build the full message text — combine text content and attachment descriptions
+    logger.debug(f"handle_message attachments raw: {attachments}")
     att_text = format_attachments_text(attachments)
     full_text = "\n".join(p for p in [content, att_text] if p) or "(attachment)"
 
@@ -266,6 +331,10 @@ async def handle_message(payload: dict, db: AsyncSession):
         detail = (f"[CID-{conversation_id}] {username}: {full_text[:80]}"
                   if result else f"[CID-{conversation_id}] Failed to post to Slack")
         await db_activity_log.add(db, inbox_id, mapping.inbox_name, "message_created", detail, status=status)
+        # Upload image attachments inline after the message
+        if attachments and result:
+            await post_attachments_to_thread(
+                attachments, thread_data["channel_id"], thread_data["ts"], db)
     else:
         # New conversation — create the opening Slack message and store the thread_ts
         logger.info(f"Creating new Slack thread for conv {conversation_id} in {mapping.slack_channel}")
@@ -282,6 +351,10 @@ async def handle_message(payload: dict, db: AsyncSession):
             await db_activity_log.add(db, inbox_id, mapping.inbox_name, "message_created",
                 f"[CID-{conversation_id}] New thread created → {mapping.slack_channel} | "
                 f"{sender_name}: {full_text[:60]}", status="ok")
+            # Upload image attachments inline after the thread is created
+            if attachments:
+                await post_attachments_to_thread(
+                    attachments, mapping.slack_channel_id, ts, db)
         else:
             await db_activity_log.add(db, inbox_id, mapping.inbox_name, "message_created",
                 f"[CID-{conversation_id}] Failed to create Slack thread", status="error")

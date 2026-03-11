@@ -77,6 +77,46 @@ async def send_message(
         return result
 
 
+async def send_attachment(
+    conversation_id: int,
+    file_bytes: bytes,
+    filename: str,
+    content: str = "",
+    db=None,
+) -> Optional[dict]:
+    """Send a file attachment to a Chatwoot conversation via multipart upload."""
+    base_url, account_id, token = await _get_credentials(db)
+    if not all([base_url, account_id, token]):
+        logger.error("Chatwoot credentials not configured — cannot send attachment")
+        return None
+
+    url = f"{_base_url(base_url, account_id)}/conversations/{conversation_id}/messages"
+    # Chatwoot requires multipart/form-data for attachments — no Content-Type header,
+    # httpx sets it automatically with the correct boundary when files= is used.
+    headers = {"api_access_token": token}
+    data = {"message_type": "outgoing", "private": "false"}
+    if content:
+        data["content"] = content
+
+    logger.debug(f"Chatwoot send_attachment → POST {url} filename={filename}")
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            url,
+            headers=headers,
+            data=data,
+            files={"attachments[]": (filename, file_bytes)},
+        )
+        if r.status_code not in (200, 201):
+            logger.error(f"Chatwoot attachment upload error {r.status_code}: {r.text}")
+            return None
+        result = r.json()
+        message_id = result.get("id")
+        if message_id:
+            from app.routes.chatwoot import register_our_message
+            register_our_message(message_id)
+        return result
+
+
 async def get_conversation(conversation_id: int, db=None) -> Optional[dict]:
     """Fetch a single conversation from Chatwoot."""
     base_url, account_id, token = await _get_credentials(db)

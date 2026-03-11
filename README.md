@@ -257,7 +257,7 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 1. Enable Events
 2. Request URL: `https://your-slackwoot-domain.com/slack/events`
 3. Slack sends a challenge — SlackWoot responds automatically
-4. Subscribe to **Bot Events**: `message.channels`, `message.groups`
+4. Subscribe to **Bot Events**: `message.channels`, `message.groups` , `file_shared`
 
 ### 4. Install & Configure
 1. **OAuth & Permissions** → Install to Workspace → copy the `xoxb-` bot token
