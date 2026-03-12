@@ -29,7 +29,6 @@ jobs:
       - name: Run tests
         env:
           SECRET_KEY: "ci-test-secret-key-not-used-in-production-00000"
-          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
         run: pytest
 
   build-and-push:
