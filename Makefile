@@ -8,3 +8,7 @@ dev: install
 
 run: install
 	python run.py
+
+test:
+	pip install -e ".[dev]"
+	pytest

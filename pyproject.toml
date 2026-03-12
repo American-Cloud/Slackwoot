@@ -22,6 +22,16 @@ dependencies = [
     "cryptography>=42.0.0",
     "bcrypt>=4.1.0",
 ]
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-mock>=3.12",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
