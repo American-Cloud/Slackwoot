@@ -14,6 +14,7 @@ import time
 
 # Set SECRET_KEY before any app imports
 os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production-1234")
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
