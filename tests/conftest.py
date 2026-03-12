@@ -12,31 +12,31 @@ import hashlib
 import hmac
 import time
 
-# Set SECRET_KEY before any app imports
-os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production-1234")
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true")
+# Set env vars before ANY app imports — database.py reads DATABASE_URL at import time
+os.environ["SECRET_KEY"] = "test-secret-key-do-not-use-in-production-1234"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared&uri=true"
 
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.main import app
-from app.database import Base, get_db
+from app.database import Base, get_db, engine as app_engine
 from app.models import AppConfig, InboxMapping, ThreadMapping
 from app.crypto import encrypt
 
-
-# ── In-memory test database ───────────────────────────────────────────────────
-
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Use the exact same URL the app's engine uses — not a separate :memory: URL
+# This ensures IPWhitelistMiddleware (which uses AsyncSessionLocal directly)
+# sees the same tables and data as the test fixtures.
+TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 @pytest_asyncio.fixture(scope="function")
 async def db_engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-    async with engine.begin() as conn:
+    # Use the app's own engine — same connection, same tables
+    async with app_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)   # clean slate per test
         await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
+    yield app_engine
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -81,7 +81,6 @@ async def seeded_db(db_session):
 async def client(seeded_db):
     """
     AsyncClient wired to the FastAPI app with the test DB injected.
-    All tests using this fixture share the same seeded DB session.
     """
     async def override_get_db():
         yield seeded_db
