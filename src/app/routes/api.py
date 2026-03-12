@@ -168,7 +168,7 @@ async def toggle_mapping(mapping_id: int, db: AsyncSession = Depends(get_db)):
 async def get_threads(
     db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
-    page_size: int = Query(PAGE_SIZE_THREADS, ge=1, le=100),
+    page_size: int = Query(PAGE_SIZE_THREADS, ge=1, le=10000),
     inbox_id: Optional[int] = Query(None),
 ):
     """Return thread mappings, paginated. Optionally filter by inbox_id."""
@@ -199,7 +199,7 @@ async def delete_thread(conversation_id: int, db: AsyncSession = Depends(get_db)
 async def get_logs(
     db: AsyncSession = Depends(get_db),
     page: int = Query(1, ge=1),
-    page_size: int = Query(PAGE_SIZE_LOGS, ge=1, le=200),
+    page_size: int = Query(PAGE_SIZE_LOGS, ge=1, le=10000),
     status: Optional[str] = Query(None),
     inbox_id: Optional[int] = Query(None),
 ):

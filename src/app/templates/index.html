@@ -90,12 +90,20 @@
       <button class="btn btn-red btn-sm" onclick="clearLogs()">🗑 Clear</button>
     </div>
   </div>
-  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;font-size:0.82rem;color:var(--muted);">
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;font-size:0.82rem;color:var(--muted);flex-wrap:wrap;">
     <div class="pagination">
       <button class="btn btn-muted btn-sm" id="log-prev" onclick="changeLogPage(-1)" disabled>← Prev</button>
       <span id="log-page-info">Page 1</span>
       <button class="btn btn-muted btn-sm" id="log-next" onclick="changeLogPage(1)">Next →</button>
     </div>
+    <span>Rows:
+      <select id="log-page-size" onchange="logPage=1;refreshLogs()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin-left:0.3rem;">
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="9999">All</option>
+      </select>
+    </span>
     <span style="margin-left:auto;">Filter:
       <select id="log-status-filter" onchange="logPage=1;refreshLogs()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin-left:0.3rem;">
         <option value="">All</option>
@@ -181,7 +189,10 @@
 const CHATWOOT_URL = {{ chatwoot_url|tojson }};
 const ACCOUNT_ID   = {{ account_id|tojson }};
 let logPage = 1;
-const LOG_PAGE_SIZE = 50;
+function getLogPageSize() {
+  const el = document.getElementById('log-page-size');
+  return el ? parseInt(el.value) : 50;
+}
 
 // Holds merged data: { [inboxId]: { inbox, mapping|null } }
 let _unifiedData = {};
@@ -397,7 +408,7 @@ function renderLogs(data) {
 }
 async function refreshLogs() {
   const status = document.getElementById('log-status-filter').value;
-  const params = new URLSearchParams({ page: logPage, page_size: LOG_PAGE_SIZE });
+  const params = new URLSearchParams({ page: logPage, page_size: getLogPageSize() });
   if (status) params.set('status', status);
   try { const r = await apiFetch(`/api/logs?${params}`); renderLogs(await r.json()); }
   catch(e) { console.error('Failed to refresh logs:', e); }

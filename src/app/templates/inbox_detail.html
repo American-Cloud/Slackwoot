@@ -34,12 +34,22 @@
 
 <!-- Active Thread Mappings -->
 <div class="card">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem;">
     <h2 style="margin:0;">🧵 Active Thread Mappings</h2>
-    <div class="pagination">
-      <button class="btn btn-muted btn-sm" id="thread-prev" onclick="changeThreadPage(-1)" disabled>← Prev</button>
-      <span id="thread-page-info">Page 1</span>
-      <button class="btn btn-muted btn-sm" id="thread-next" onclick="changeThreadPage(1)">Next →</button>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+      <span style="font-size:0.82rem;color:var(--muted);">Rows:
+        <select id="thread-page-size" onchange="threadPage=1;refreshThreads()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin-left:0.3rem;">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="9999">All</option>
+        </select>
+      </span>
+      <div class="pagination">
+        <button class="btn btn-muted btn-sm" id="thread-prev" onclick="changeThreadPage(-1)" disabled>← Prev</button>
+        <span id="thread-page-info">Page 1</span>
+        <button class="btn btn-muted btn-sm" id="thread-next" onclick="changeThreadPage(1)">Next →</button>
+      </div>
     </div>
   </div>
   <p style="color:var(--muted);font-size:0.82rem;margin-bottom:1rem;">
@@ -74,12 +84,20 @@
       <button class="btn btn-muted btn-sm" onclick="refreshLogs()">↻ Refresh</button>
     </div>
   </div>
-  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;font-size:0.82rem;">
+  <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;font-size:0.82rem;flex-wrap:wrap;">
     <div class="pagination">
       <button class="btn btn-muted btn-sm" id="log-prev" onclick="changeLogPage(-1)" disabled>← Prev</button>
       <span id="log-page-info">Page 1</span>
       <button class="btn btn-muted btn-sm" id="log-next" onclick="changeLogPage(1)">Next →</button>
     </div>
+    <span style="color:var(--muted);">Rows:
+      <select id="log-page-size" onchange="logPage=1;refreshLogs()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin-left:0.3rem;">
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="9999">All</option>
+      </select>
+    </span>
     <span style="margin-left:auto;color:var(--muted);">Filter:
       <select id="log-status-filter" onchange="logPage=1;refreshLogs()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;margin-left:0.3rem;">
         <option value="">All</option>
@@ -112,8 +130,8 @@ const ACCOUNT_ID   = {{ account_id|tojson }};
 const INBOX_ID     = {{ mapping.chatwoot_inbox_id }};
 let logPage    = 1;
 let threadPage = 1;
-const LOG_PAGE_SIZE    = 50;
-const THREAD_PAGE_SIZE = 25;
+function getLogPageSize()    { const el = document.getElementById('log-page-size');    return el ? parseInt(el.value) : 50; }
+function getThreadPageSize() { const el = document.getElementById('thread-page-size'); return el ? parseInt(el.value) : 25; }
 
 async function apiFetch(url, opts={}) {
   const r = await fetch(url, { credentials: 'include', ...opts });
@@ -148,7 +166,7 @@ function renderThreads(data) {
 }
 
 async function refreshThreads() {
-  const params = new URLSearchParams({ page: threadPage, page_size: THREAD_PAGE_SIZE, inbox_id: INBOX_ID });
+  const params = new URLSearchParams({ page: threadPage, page_size: getThreadPageSize(), inbox_id: INBOX_ID });
   try {
     const r = await apiFetch(`/api/threads?${params}`);
     renderThreads(await r.json());
@@ -194,7 +212,7 @@ function renderLogs(data) {
 
 async function refreshLogs() {
   const status = document.getElementById('log-status-filter').value;
-  const params = new URLSearchParams({ page: logPage, page_size: LOG_PAGE_SIZE, inbox_id: INBOX_ID });
+  const params = new URLSearchParams({ page: logPage, page_size: getLogPageSize(), inbox_id: INBOX_ID });
   if (status) params.set('status', status);
   try {
     const r = await apiFetch(`/api/logs?${params}`);
