@@ -14,12 +14,12 @@
 # uncomment the postgres service at the bottom of this file.
 
 services:
-  logging:
-    driver: "json-file"
-    options:
-      max-file: "5"
-      max-size: "10m"
   slackwoot:
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "5"
+        max-size: "10m"
     build: .
     image: ghcr.io/american-cloud/slackwoot:latest
     container_name: slackwoot
