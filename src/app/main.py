@@ -97,14 +97,14 @@ async def not_found_handler(request: Request, exc: HTTPException):
     # Return JSON for /api/* routes, HTML template for everything else
     if request.url.path.startswith("/api/"):
         return JSONResponse(status_code=404, content={"detail": "Not found"})
-    return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
+    return templates.TemplateResponse(request, "404.html", {}, status_code=404)
 
 
 @app.exception_handler(405)
 async def method_not_allowed_handler(request: Request, exc: HTTPException):
     if request.url.path.startswith("/api/"):
         return JSONResponse(status_code=405, content={"detail": "Method not allowed"})
-    return templates.TemplateResponse("404.html", {"request": request}, status_code=405)
+    return templates.TemplateResponse(request, "404.html", {}, status_code=405)
 
 
 # ── Docs ───────────────────────────────────────────────────────────────────────

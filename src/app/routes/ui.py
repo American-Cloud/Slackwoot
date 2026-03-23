@@ -40,7 +40,7 @@ async def setup_page(request: Request, db: AsyncSession = Depends(get_db)):
     # If already configured, redirect to main page
     if await is_configured(db):
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse("setup.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request, "setup.html", {"error": None})
 
 
 @router.post("/setup", response_class=HTMLResponse)
@@ -65,7 +65,7 @@ async def setup_submit(
         error = "Password must be at least 8 characters."
 
     if error:
-        return templates.TemplateResponse("setup.html", {"request": request, "error": error})
+        return templates.TemplateResponse(request, "setup.html", {"error": error})
 
     # Save all settings to DB (crypto.py handles encryption automatically)
     await set_setting(db, "chatwoot_base_url", chatwoot_base_url.rstrip("/"))
@@ -93,7 +93,7 @@ async def login_page(request: Request, db: AsyncSession = Depends(get_db)):
     if not await is_configured(db):
         return RedirectResponse(url="/setup", status_code=302)
     next_url = request.query_params.get("next", "/")
-    return templates.TemplateResponse("login.html", {"request": request, "next": next_url, "error": None})
+    return templates.TemplateResponse(request, "login.html", {"next": next_url, "error": None})
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -109,8 +109,7 @@ async def login_submit(
         response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL, httponly=True, samesite="lax")
         return response
 
-    return templates.TemplateResponse("login.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "login.html", {
         "next": next,
         "error": "Incorrect password.",
     })
@@ -142,8 +141,7 @@ async def main_page(request: Request, db: AsyncSession = Depends(get_db)):
     chatwoot_webhook_url = f"{base}/webhook/chatwoot"
     slack_events_url = f"{base}/slack/events"
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "index.html", {
         "mappings": [m.to_dict() for m in mappings],
         "thread_count": thread_count,
         "log_count": log_count,
@@ -160,8 +158,7 @@ async def main_page(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/config", response_class=HTMLResponse)
 async def config_page(request: Request, db: AsyncSession = Depends(get_db)):
     cfg = await get_all_settings(db)
-    return templates.TemplateResponse("config.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "config.html", {
         "cfg": cfg,
         "saved": request.query_params.get("saved") == "1",
         "error": None,
@@ -222,14 +219,14 @@ async def config_password(
 ):
     if new_password != new_password_confirm:
         cfg = await get_all_settings(db)
-        return templates.TemplateResponse("config.html", {
-            "request": request, "cfg": cfg,
+        return templates.TemplateResponse(request, "config.html", {
+            "cfg": cfg,
             "error": "Passwords do not match.", "saved": False,
         })
     if len(new_password) < 8:
         cfg = await get_all_settings(db)
-        return templates.TemplateResponse("config.html", {
-            "request": request, "cfg": cfg,
+        return templates.TemplateResponse(request, "config.html", {
+            "cfg": cfg,
             "error": "Password must be at least 8 characters.", "saved": False,
         })
     await set_setting(db, "admin_password", new_password)
@@ -248,7 +245,7 @@ async def inbox_detail(
 ):
     mapping = await db_inbox_mappings.get_by_inbox_id(db, inbox_id)
     if not mapping:
-        return templates.TemplateResponse("404.html", {"request": request}, status_code=404)
+        return templates.TemplateResponse(request, "404.html", {}, status_code=404)
 
     chatwoot_url = await get_setting(db, "chatwoot_base_url")
     account_id = await get_setting(db, "chatwoot_account_id")
@@ -257,8 +254,7 @@ async def inbox_detail(
     logs = await db_activity_log.get_all(db, limit=50, inbox_id=inbox_id)
     log_count = await db_activity_log.count(db, inbox_id=inbox_id)
 
-    return templates.TemplateResponse("inbox_detail.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "inbox_detail.html", {
         "mapping": mapping.to_dict(),
         "logs": logs,
         "log_count": log_count,

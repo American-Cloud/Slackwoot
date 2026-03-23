@@ -14,6 +14,11 @@
 # uncomment the postgres service at the bottom of this file.
 
 services:
+  logging:
+    driver: "json-file"
+    options:
+      max-file: "5"
+      max-size: "10m"
   slackwoot:
     build: .
     image: ghcr.io/american-cloud/slackwoot:latest
@@ -51,6 +56,11 @@ services:
   # ── PostgreSQL (optional) ─────────────────────────────────────────────────
   # Uncomment this service and set DATABASE_URL in .env to use PostgreSQL.
   # postgres:
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-file: "5"
+  #       max-size: "10m"
   #   image: postgres:16-alpine
   #   container_name: slackwoot_postgres
   #   environment:
