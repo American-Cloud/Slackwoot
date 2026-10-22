@@ -14,6 +14,7 @@ UI page routes for SlackWoot.
 
 import os
 import logging
+import time
 from app.main import __version__
 
 from fastapi import APIRouter, Request, Depends, Form
@@ -24,10 +25,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.db_config import get_setting, set_setting, is_configured, verify_admin_password, get_all_settings
 from app import db_inbox_mappings, db_thread_store, db_activity_log
-from app.middleware import create_session_token, SESSION_COOKIE, SESSION_TTL
+from app.middleware import create_session_token, SESSION_COOKIE, SESSION_TTL, _get_client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ── Login rate limit ──────────────────────────────────────────────────────────
+# In-memory, per client IP. Good enough for a single-instance admin UI.
+# After LOGIN_MAX_FAILURES wrong passwords inside LOGIN_WINDOW seconds, the IP
+# gets 429 until the window has passed. A correct password clears the counter.
+LOGIN_MAX_FAILURES = 5
+LOGIN_WINDOW = 15 * 60
+_login_failures: dict[str, list[float]] = {}
+
+
+def _login_blocked(ip: str) -> bool:
+    now = time.time()
+    recent = [t for t in _login_failures.get(ip, []) if now - t < LOGIN_WINDOW]
+    _login_failures[ip] = recent
+    return len(recent) >= LOGIN_MAX_FAILURES
+
+
+def _login_failed(ip: str) -> None:
+    _login_failures.setdefault(ip, []).append(time.time())
+
+
+def _login_succeeded(ip: str) -> None:
+    _login_failures.pop(ip, None)
+
+
+def _reset_login_limiter() -> None:
+    """Test helper."""
+    _login_failures.clear()
 
 _templates_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "templates")
 templates = Jinja2Templates(directory=_templates_dir)
@@ -103,16 +132,27 @@ async def login_submit(
     password: str = Form(...),
     next: str = Form(default="/"),
 ):
+    ip = _get_client_ip(request)
+    if _login_blocked(ip):
+        logger.warning(f"Login blocked for {ip!r}: too many failed attempts")
+        return templates.TemplateResponse(request, "login.html", {
+            "next": next,
+            "error": "Too many failed attempts. Try again in a few minutes.",
+        }, status_code=429)
+
     if await verify_admin_password(db, password):
+        _login_succeeded(ip)
         response = RedirectResponse(url=next or "/", status_code=302)
         token = create_session_token()
         response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_TTL, httponly=True, samesite="lax")
         return response
 
+    _login_failed(ip)
+    logger.warning(f"Failed login from {ip!r}")
     return templates.TemplateResponse(request, "login.html", {
         "next": next,
         "error": "Incorrect password.",
-    })
+    }, status_code=401)
 
 
 @router.get("/logout")

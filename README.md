@@ -40,7 +40,7 @@ The honest take: if your entire use case is Chatwoot ↔ Slack, SlackWoot does i
 - ⏸️ **Pause per inbox** — disable a mapping without deleting it; blocks both directions
 - 📡 **Persistent activity log** — DB-backed event log with per-inbox drill-down
 - 🗄️ **DB-driven config** — all settings managed via UI, encrypted at rest
-- 🔒 **Session auth** — cookie-based login protects all UI and API routes
+- 🔒 **Session auth** — cookie-based login protects all UI and API routes, with a per-IP rate limit on failed logins
 - 🌐 **Webhook IP whitelist** — restrict `/webhook/chatwoot` to your Chatwoot server IP
 - 🐳 **Docker ready** — multi-stage build, non-root user, one env var to deploy
 
@@ -174,6 +174,7 @@ Only three env vars are needed at deploy time. Everything else is configured thr
 | `SECRET_KEY` | ✅ Yes | Encrypts all sensitive DB values. Generate with `openssl rand -hex 32`. **Never change after setup.** |
 | `DATABASE_URL` | No | SQLAlchemy async URL. Default: `sqlite+aiosqlite:///data/slackwoot.db` |
 | `LOG_LEVEL` | No | `INFO` (default), `DEBUG`, `WARNING`, `ERROR` — set in docker-compose env, not the UI |
+| `TRUSTED_PROXY_IPS` | No | Comma-separated IPs or CIDRs of reverse proxies in front of SlackWoot. Only requests from these addresses may set the client IP through `X-Forwarded-For`. Default: empty, the header is ignored. Set this if the webhook IP whitelist or the login rate limit must see the real client address behind a proxy. |
 
 > ⚠️ If `SECRET_KEY` is lost or changed, stored credentials become unreadable and must be re-entered at `/config`. Back it up in a secrets manager.
 

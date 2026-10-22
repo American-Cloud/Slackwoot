@@ -40,6 +40,8 @@ services:
       # ── Optional — defaults shown ─────────────────────────────────────────
       - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/slackwoot.db}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Reverse proxies allowed to set X-Forwarded-For (comma-separated IPs/CIDRs)
+      - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:-}
 
       # All other settings (Chatwoot URL, Slack tokens, inbox mappings, etc.)
       # are configured through the web UI at http://localhost:8000/setup

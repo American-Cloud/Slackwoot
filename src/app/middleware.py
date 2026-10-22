@@ -40,7 +40,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.config import get_secret_key
+from app.config import get_secret_key, get_trusted_proxy_ips
 
 logger = logging.getLogger(__name__)
 
@@ -97,9 +97,32 @@ def _ip_allowed(client_ip: str, networks: List[ipaddress.IPv4Network]) -> bool:
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract real client IP, respecting X-Forwarded-For when behind a proxy."""
+    """
+    Return the client IP used for whitelist and rate-limit decisions.
+
+    X-Forwarded-For is only honoured when the direct peer is one of the
+    proxies listed in TRUSTED_PROXY_IPS. Any client that reaches the service
+    directly can write that header, so trusting it from everyone would let a
+    caller spoof an allowed address.
+    """
+    peer = request.client.host if request.client else ""
     forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    return forwarded or (request.client.host if request.client else "")
+    proxies = get_trusted_proxy_ips()
+    if forwarded and peer and proxies and _ip_allowed(peer, proxies):
+        return forwarded
+    return peer
+
+
+def _request_path(request: Request) -> str:
+    """
+    Return the routed path from the ASGI scope.
+
+    request.url is rebuilt from the Host header. Starlette before 1.0.1 did not
+    validate that header (CVE-2026-48710), so a crafted Host could make
+    request.url.path differ from the path the router uses. The scope path is
+    the one the router sees, so auth decisions must use it.
+    """
+    return request.scope.get("path", "") or ""
 
 
 async def _check_whitelist(path: str, client_ip: str) -> Optional[JSONResponse]:
@@ -143,7 +166,7 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+        path = _request_path(request)
 
         if path in PUBLIC_PATHS or any(path.startswith(p) for p in PUBLIC_PREFIXES):
             return await call_next(request)
@@ -168,7 +191,7 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        path = request.url.path
+        path = _request_path(request)
 
         if not path.startswith("/webhook/"):
             return await call_next(request)
